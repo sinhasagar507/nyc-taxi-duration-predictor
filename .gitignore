@@ -29,7 +29,9 @@ MANIFEST
 # Directory 
 1_gcp_terraform/terraform
 1_gcp_terraform/terraform/.terraform
+1_gcp_terraform/terraform/.terraform/providers/registry.terraform.io/hashicorp/google/6.11.1/darwin_arm64/
 secrets/
+.google/credentials/
 
 
 # PyInstaller
