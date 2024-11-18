@@ -28,6 +28,7 @@ MANIFEST
 
 # Directory 
 1_gcp_terraform/terraform
+1_gcp_terraform/terraform/.terraform
 secrets/
 
 
