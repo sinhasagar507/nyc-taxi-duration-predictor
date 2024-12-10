@@ -1,29 +1,33 @@
-# First-time build can take upto 10 mins.
-
 FROM apache/airflow:2.10.3
 
 ENV AIRFLOW_HOME=/opt/airflow
 
+# Set the user to root for administrative tasks
 USER root
-RUN apt-get update -qq && apt-get install vim -qqq
-# git gcc g++ -qqq
 
-USER $AIRFLOW_UID
+# Install system-level dependencies
+RUN apt-get update -qq && apt-get install -y vim \
+    && apt-get clean
+
+# Switch to airflow user for Python package installations
+USER ${AIRFLOW_UID}
+
+# Copy and install Python dependencies as the airflow user
 COPY requirements.txt .
-RUN pip install --no-cache-dir "apache-airflow==${AIRFLOW_VERSION}" -r requirements.txt
-RUN pip install --no-cache-dir "apache-airflow==${AIRFLOW_VERSION}" pandas sqlalchemy psycopg2-binary
+RUN pip install --no-cache-dir "apache-airflow==2.10.3" -r requirements.txt \
+    && pip install --no-cache-dir pandas sqlalchemy psycopg2-binary
 
-
-# Ref: https://airflow.apache.org/docs/docker-stack/recipes.html
-
+# Set the shell options for better error handling
 SHELL ["/bin/bash", "-o", "pipefail", "-e", "-u", "-x", "-c"]
 
-ARG CLOUD_SDK_VERSION=322.0.0
-ENV GCLOUD_HOME=/home/google-cloud-sdk
+# Return to root for further administrative tasks if needed
+USER root
 
+# Install Google Cloud SDK
+ENV GCLOUD_HOME=/home/google-cloud-sdk
 ENV PATH="${GCLOUD_HOME}/bin/:${PATH}"
 
-RUN DOWNLOAD_URL="https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-sdk-${CLOUD_SDK_VERSION}-linux-x86_64.tar.gz" \
+RUN DOWNLOAD_URL="https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-darwin-arm.tar.gz" \
     && TMP_DIR="$(mktemp -d)" \
     && curl -fL "${DOWNLOAD_URL}" --output "${TMP_DIR}/google-cloud-sdk.tar.gz" \
     && mkdir -p "${GCLOUD_HOME}" \
@@ -36,6 +40,6 @@ RUN DOWNLOAD_URL="https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/goo
     && rm -rf "${TMP_DIR}" \
     && gcloud --version
 
+# Set the working directory and revert to airflow user
 WORKDIR $AIRFLOW_HOME
-
-# USER $AIRFLOW_UID
+USER ${AIRFLOW_UID}
