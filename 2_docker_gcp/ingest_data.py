@@ -18,8 +18,6 @@ def main(params):
         # Output to CSV 
         os.system(f"wget {url} -O {csv_name}")
         
-        
-        
         # Connect to the database engine
         engine = create_engine(f"postgresql://{user}:{password}@{host}:{port}/{db}")
         engine.connect()
