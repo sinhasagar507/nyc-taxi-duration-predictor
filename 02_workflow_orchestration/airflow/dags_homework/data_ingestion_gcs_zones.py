@@ -19,29 +19,11 @@ import pyarrow as pa
 PROJECT_ID = os.environ.get("GCP_PROJECT_ID")
 BUCKET = os.environ.get("GCP_GCS_BUCKET")
 PATH_TO_LOCAL_HOME = os.environ.get("AIRFLOW_HOME", "/opt/airflow/")
-TRIPDATA_URL_PREFIX = "https://d37ci6vzurychx.cloudfront.net/trip-data/"
-YELLOW_TRIP_SOURCE_PARQUET_FILE = TRIPDATA_URL_PREFIX + "yellow_tripdata_{{ execution_date.strftime('%Y-%m') }}.parquet"
-GREEN_TRIP_SOURCE_PARQUET_FILE = TRIPDATA_URL_PREFIX + "green_tripdata_{{ execution_date.strftime('%Y-%m') }}.parquet"
-YELLOW_TRIP_TARGET_DATASET_FILE = "yellow_tripdata_{{ execution_date.strftime('%Y-%m') }}.parquet"
-GREEN_TRIP_TARGET_PARQUET_FILE = "green_tripdata_{{ execution_date.strftime('%Y-%m') }}.parquet"
-YELLOW_TRIP_BIGQUERY_DATASET = os.environ.get("YELLOW_TRIP_BIGQUERY_DATASET", "yellow_trips_data")
-GREEN_TRIP_BIGQUERY_DATASET = os.environ.get("GREEN_TRIP_BIGQUERY_DATASET", "green_trips_data")
+ZONE_SOURCE_DATASET_FILE = "https://d37ci6vzurychx.cloudfront.net/misc/taxi_zone_lookup.csv"
+ZONE_TARGET_DATASET_FILE = "taxi_zone_data.parquet"
+ZONE_BIGQUERY_DATASET = os.environ.get("ZONE_BIGQUERY_DATASET", "zone_data")
 BIGQUERY_DATASET = os.environ.get("BIGQUERY_DATASET", "demo_dataset")
 
-
-# Function to determine the dataset mode, initially "yellow" and then set to "green"
-def determine_dataset_mode(**context):
-    dataset_mode = Variable.get("dataset_mode", default_var="yellow")
-    last_processed_date = Variable.get(f"last_{dataset_mode}_processed_date", default_var="")
-    current_year_month = context["execution_date"].strftime("%Y-%m")
-    
-    # When all yellow datasets are processed, switch to green 
-    if dataset_mode == "yellow" and last_processed_date >= current_year_month:
-        Variable.set("dataset_mode", "green")
-        dataset_mode = "green"
-        
-    # Push the dataset mode to XCom for downstream tasks
-    # context["ti"].xcom_push(key="dataset_mode", value=dataset_mode)
 
 # Function to format the source file to parquet if not already in the format
 def format_to_parquet(src_file):
@@ -80,26 +62,6 @@ def format_to_parquet(src_file):
     except Exception as e:
         logging.error(f"Error processing file: {src_file}. Error: {e}")
 
-# Function to update the last processed date, it is first processed in the second iteration 
-# def update_last_processed_date(**context):
-#     dataset_mode = context["ti"].xcom_pull(task_ids="determine_dataset_mode", key="dataset_mode")
-#     current_year_month = context["execution_date"].strftime('%Y-%m')
-#     Variable.set(f"last_{dataset_mode}_processed_date", current_year_month)
-
-def update_last_processed_date(**context):
-    dataset_mode = Variable.get("dataset_mode")
-    current_year_month = context["execution_date"].strftime('%Y-%m')
-    
-    # Log values to ensure they are correct
-    logging.info(f"Updating last processed date for mode: {dataset_mode}")
-    logging.info(f"Current Year-Month: {current_year_month}")
-    
-    # Update the Airflow Variable
-    Variable.set(f"last_{dataset_mode}_processed_date", current_year_month)
-    
-    # Push values to XCom
-    # context["ti"].xcom_push(key="current_year_month",value=current_year_month)
-    # context["ti"].xcom_push(key="dataset_mode", value=dataset_mode)
     
 # NOTE: takes 20 mins, at an upload speed of 800kbps. Faster if your internet has a better upload speed
 def upload_to_gcs(bucket, object_name, local_file):
@@ -131,54 +93,39 @@ default_args = {
 
 # NOTE: DAG declaration - using a Context Manager (an implicit way)
 with DAG(
-    dag_id='taxi_data_pipeline',
+    dag_id='zone_data_pipeline',
     default_args=default_args,
-    start_date=datetime(2023, 1, 1),        # Start from Jan 1 2023
-    # end_date=datetime(2024, 7, 30),
-    schedule_interval='0 6 1 * *',          # 6 AM on the 1st of every month
+    start_date=days_ago(1),                 # Start from Jan 1 2023
+    schedule_interval='@once',              # 6 AM on the 1st of every month
     catchup=True,                           # Process historical data
     max_active_runs=3,                      # Limit parallel runs
+    tags=['dtc-de'],
 ) as dag:
     
-    determine_dataset_mode_task = PythonOperator(
-        task_id="determine_dataset_mode", 
-        python_callable=determine_dataset_mode, 
-        provide_context=True,
-    )
 
     download_dataset_task = BashOperator(
-    task_id="download_dataset_task",
-    bash_command=(
-        f"curl -sSL {TRIPDATA_URL_PREFIX}"
-        f"{{{{ var.value.dataset_mode }}}}_tripdata_{{{{ execution_date.strftime('%Y-%m') }}}}.parquet "
-        f"> {PATH_TO_LOCAL_HOME}/tripdata_{{{{ var.value.dataset_mode }}}}_{{{{ execution_date.strftime('%Y-%m') }}}}.parquet"
-    ),
-)
-    
-    update_last_processed_date_task = PythonOperator(
-        task_id="update_last_processed_date", 
-        python_callable=update_last_processed_date, 
+        task_id="download_dataset_task",
+        bash_command=f"curl -sSL {ZONE_SOURCE_DATASET_FILE} > {PATH_TO_LOCAL_HOME}/{ZONE_TARGET_DATASET_FILE}"
     )
-
+    
     convert_to_parquet_task = PythonOperator(
         task_id = "convert_to_parquet_task", 
         python_callable = format_to_parquet, 
         op_kwargs={
-            "src_file": f"{PATH_TO_LOCAL_HOME}/tripdata_{{{{ var.value.dataset_mode }}}}_{{{{ execution_date.strftime('%Y-%m') }}}}.parquet",
+            "src_file": f"{PATH_TO_LOCAL_HOME}/{ZONE_TARGET_DATASET_FILE}",
         },
     )
     
-
     # TODO: Homework - research and try XCOM to communicate output values between 2 tasks/operators
-    # local_to_gcs_task = PythonOperator(
-    #     task_id="local_to_gcs_task",
-    #     python_callable=upload_to_gcs,
-    #     op_kwargs={
-    #         "bucket": BUCKET,
-    #         "object_name": f"hw/{{{{ ti.xcom_pull(task_ids='determine_dataset_mode', key='dataset_mode') }}}}/{{{{ execution_date.strftime('%Y') }}}}/tripdata_{{{{ execution_date.strftime('%Y-%m') }}}}.parquet",
-    #         "local_file": f"{PATH_TO_LOCAL_HOME}/tripdata_{{{{ ti.xcom_pull(task_ids='determine_dataset_mode', key='dataset_mode') }}}}_{{{{ execution_date.strftime('%Y-%m') }}}}.parquet",
-    #     },
-    # )
+    local_to_gcs_task = PythonOperator(
+        task_id="local_to_gcs_task",
+        python_callable=upload_to_gcs,
+        op_kwargs={
+            "bucket": BUCKET,
+            "object_name": f"hw/zone_data/{ZONE_TARGET_DATASET_FILE}",
+            "local_file": f"{PATH_TO_LOCAL_HOME}/{ZONE_TARGET_DATASET_FILE}",
+        },
+    )
 
     # bigquery_external_table_task = BigQueryCreateExternalTableOperator(
     #     task_id="bigquery_external_table_task",
@@ -195,4 +142,4 @@ with DAG(
     #     },
     # )
 
-    determine_dataset_mode_task >> download_dataset_task >> update_last_processed_date_task >> convert_to_parquet_task 
+    download_dataset_task >> convert_to_parquet_task >> local_to_gcs_task 
