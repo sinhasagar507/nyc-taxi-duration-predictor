@@ -30,7 +30,12 @@ MANIFEST
 1_gcp_terraform/terraform
 1_gcp_terraform/terraform/.terraform
 1_gcp_terraform/terraform/.terraform/providers/registry.terraform.io/hashicorp/google/6.11.1/darwin_arm64/
-1_gcp_terraform/terraform/.terraform/providers/registry.terraform.io/hashicorp/google/5.6.0/darwin_arm64/
+1_gcp_terraform/terraform/.terraform/providers/registry.terraform.io/hashicorp/
+04_analytics_engineering/experimental_analysis/data/
+05_batch_processing/fhvhv/
+05_batch_processing/fhvhv_susbet/
+05_batch_processing/test_data/
+google/5.6.0/darwin_arm64/
 secrets/
 .google/credentials/
 
@@ -86,6 +91,10 @@ target/
 
 # Jupyter Notebook
 .ipynb_checkpoints
+
+# Configurations
+*/.DS_Store
+
 
 # IPython
 profile_default/
