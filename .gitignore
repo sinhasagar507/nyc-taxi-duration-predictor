@@ -93,6 +93,7 @@ target/
 .ipynb_checkpoints
 
 # Configurations
+.DS_Store
 */.DS_Store
 
 
@@ -100,8 +101,14 @@ target/
 profile_default/
 ipython_config.py
 
-# Other hidden directories
+# Other hidden directories & data files
 **/terraform/
+05_batch_processing/data/
+05_batch_processing/fhvhv_tripdata_2021-01.csv
+05_batch_processing/fhvhv_tripdata_2021-01.csv.gz
+05_batch_processing/head.csv
+bigquery/
+gcs_storage/
 
 # pyenv
 #   For a library or package, you might want to ignore these files since the code is
