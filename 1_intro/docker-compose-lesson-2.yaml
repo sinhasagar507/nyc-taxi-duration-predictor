@@ -1,3 +1,4 @@
+# This docker-compose is for lesson-2. Ignore it while still on lesson-1
 services:
   pg-database:
     image: postgres:16
