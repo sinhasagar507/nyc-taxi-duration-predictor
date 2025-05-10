@@ -38,6 +38,7 @@ MANIFEST
 05_batch_processing/test_data/
 docker_nana_tutorial/docker-compose-crash-course
 docker_nana_tutorial/docker-compose.yaml
+test/
 google/5.6.0/darwin_arm64/
 secrets/
 .google/credentials/
