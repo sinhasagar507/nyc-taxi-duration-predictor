@@ -6,7 +6,10 @@ ENV AIRFLOW_HOME=/opt/airflow
 USER root
 
 # Install system-level dependencies
-RUN apt-get update -qq && apt-get install -y vim \
+RUN apt-get update -qq && apt-get install -y \
+    vim \
+    curl \
+    wget \
     && apt-get clean
 
 # Switch to airflow user for Python package installations

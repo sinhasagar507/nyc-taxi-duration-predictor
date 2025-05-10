@@ -135,30 +135,30 @@ with DAG(
         },
     )
 
-    bigquery_external_table_task = BigQueryCreateExternalTableOperator(
-        task_id="bigquery_external_table_task",
-        table_resource={
-            "tableReference": {
-                "projectId": PROJECT_ID,
-                "datasetId": CLIMATE_BIGQUERY_DATASET_ID,
-                "tableId": CLIMATE_BIGQUERY_TABLE_ID,
-            },
-            "externalDataConfiguration": {
-                "sourceFormat": "PARQUET",
-                "sourceUris": [f"gs://{BUCKET}/raw/nyc_climate_data/{CLIMATE_DATA_TARGET_PARQUET}"],
-            },
-        },
-    )
+    # bigquery_external_table_task = BigQueryCreateExternalTableOperator(
+    #     task_id="bigquery_external_table_task",
+    #     table_resource={
+    #         "tableReference": {
+    #             "projectId": PROJECT_ID,
+    #             "datasetId": CLIMATE_BIGQUERY_DATASET_ID,
+    #             "tableId": CLIMATE_BIGQUERY_TABLE_ID,
+    #         },
+    #         "externalDataConfiguration": {
+    #             "sourceFormat": "PARQUET",
+    #             "sourceUris": [f"gs://{BUCKET}/raw/nyc_climate_data/{CLIMATE_DATA_TARGET_PARQUET}"],
+    #         },
+    #     },
+    # )
     
-#     cleanup_local_file_task = PythonOperator(
-#     task_id="cleanup_local_file_task",
-#     python_callable=remove_local_files,
-#     op_kwargs={
-#         "file_paths": [
-#             f"{PATH_TO_LOCAL_HOME}/{CLIMATE_DATA_DIRECTORY}/{CLIMATE_DATA_TARGET_CSV}",
-#             f"{PATH_TO_LOCAL_HOME}/{CLIMATE_DATA_DIRECTORY}/{CLIMATE_DATA_TARGET_PARQUET}",
-#         ]
-#     },
-#   )
+    cleanup_local_file_task = PythonOperator(
+    task_id="cleanup_local_file_task",
+    python_callable=remove_local_files,
+    op_kwargs={
+        "file_paths": [
+            f"{PATH_TO_LOCAL_HOME}/{CLIMATE_DATA_DIRECTORY}/{CLIMATE_DATA_TARGET_CSV}",
+            f"{PATH_TO_LOCAL_HOME}/{CLIMATE_DATA_DIRECTORY}/{CLIMATE_DATA_TARGET_PARQUET}",
+        ]
+    },
+  )
 
-    download_dataset_task >> convert_to_parquet_task >> local_to_gcs_task
+    download_dataset_task >> convert_to_parquet_task >> local_to_gcs_task >> cleanup_local_file_task

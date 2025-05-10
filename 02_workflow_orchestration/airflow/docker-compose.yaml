@@ -66,8 +66,8 @@ x-airflow-common:
     _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:-}
     GOOGLE_APPLICATION_CREDENTIALS: /.google/credentials/google_credentials.json
     AIRFLOW_CONN_GOOGLE_CLOUD_DEFAULT: 'google-cloud-platform://?extra__google_cloud_platform__key_path=/.google/credentials/google_credentials.json'
-    GCP_PROJECT_ID: 'dtc-de-course-448715' 
-    GCP_GCS_BUCKET: 'dtc-de-course-448715-terra-bucket'
+    GCP_PROJECT_ID: 'dtc-de-course-457315' 
+    GCP_GCS_BUCKET: 'dtc-de-project'
 
     # PG_HOST: "${PG_HOST}"
     # PG_USER: "${PG_USER}"

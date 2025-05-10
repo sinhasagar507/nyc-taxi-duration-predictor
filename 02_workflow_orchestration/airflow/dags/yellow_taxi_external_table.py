@@ -3,19 +3,19 @@ from airflow.providers.google.cloud.operators.bigquery import BigQueryInsertJobO
 from airflow.utils.dates import days_ago
 
 # Configuration
-PROJECT_ID = 'dtc-de-course-448715'
-DATASET_ID = 'nyc_taxi_data'
+PROJECT_ID = 'dtc-de-course-457315'
+DATASET_ID = 'nyc_taxi_data_test'
 # We'll name the external table differently to avoid confusion with any native table loads.
-TABLE_ID = 'green_taxi_external_table'
-BUCKET_NAME = 'dtc-de-course-448715-terra-bucket'
-SOURCE_FOLDER = 'raw/nyc_taxi_data/green_taxi_data/'
+TABLE_ID = 'nyc_taxi_yellow_external_test'
+BUCKET_NAME = 'dtc-de-project'
+SOURCE_FOLDER = 'nyc_taxi_data/yellow_taxi_data/'
 
 # SQL query to create or replace an external table referencing your Parquet files in GCS.
 sql_query = f"""
 CREATE OR REPLACE EXTERNAL TABLE `{PROJECT_ID}.{DATASET_ID}.{TABLE_ID}`
 OPTIONS (
   format = 'PARQUET',
-  uris = ['gs://{BUCKET_NAME}/{SOURCE_FOLDER}*.parquet']
+  uris = ['gs://{BUCKET_NAME}/{SOURCE_FOLDER}yellow_tripdata_2012-*.parquet']
 );
 """
 
@@ -25,7 +25,7 @@ default_args = {
 }
 
 with models.DAG(
-    dag_id='create_external_table_green_taxi',
+    dag_id='create_external_table_yellow_taxi',
     default_args=default_args,
     schedule_interval=None,   # Run on demand
     start_date=days_ago(1),
