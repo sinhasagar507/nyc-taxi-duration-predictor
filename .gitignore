@@ -32,6 +32,8 @@ MANIFEST
 1_intro/terraform/.terraform/providers/registry.terraform.io/hashicorp/google/6.11.1/darwin_arm64/
 1_intro/terraform/.terraform/providers/registry.terraform.io/hashicorp/
 1_intro/terraform/.terraform.lock.hcl
+1_intro/terraform/terraform.tfstate
+1_intro/terraform/terraform.tfstate.1753224766.backup
 04_analytics_engineering/experimental_analysis/data/
 05_batch_processing/fhvhv/
 05_batch_processing/fhvhv_susbet/
@@ -43,6 +45,8 @@ test/
 google/5.6.0/darwin_arm64/
 secrets/
 .google/credentials/
+02_workflow_orchestration/airflow/logs/scheduler/latest
+test/green_data_rectify.ipynb
 
 # Large files that exceed GitHub's limit
 test/yellow_tripdata_2015-09.parquet
