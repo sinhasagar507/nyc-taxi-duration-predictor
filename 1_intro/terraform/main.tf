@@ -13,22 +13,22 @@ provider "google" {
   region      = var.region
 }
 
-
-resource "google_storage_bucket" "demo-bucket" {
-  name          = var.gcs_bucket_name
-  location      = var.location
-  force_destroy = true
-
-
-  lifecycle_rule {
-    condition {
-      age = 1
-    }
-    action {
-      type = "AbortIncompleteMultipartUpload"
-    }
-  }
-}
+# Commenting out the GCS bucket to preserve the existing one without changes
+# resource "google_storage_bucket" "demo-bucket" {
+#   name          = var.gcs_bucket_name
+#   location      = var.location
+#   force_destroy = true
+#
+#
+#   lifecycle_rule {
+#     condition {
+#       age = 1
+#     }
+#     action {
+#       type = "AbortIncompleteMultipartUpload"
+#     }
+#   }
+# }
 
 
 resource "google_bigquery_dataset" "demo_dataset" {
