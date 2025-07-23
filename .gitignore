@@ -36,6 +36,7 @@ MANIFEST
 05_batch_processing/fhvhv/
 05_batch_processing/fhvhv_susbet/
 05_batch_processing/test_data/
+test/
 docker_nana_tutorial/docker-compose-crash-course
 docker_nana_tutorial/docker-compose.yaml
 test/
@@ -43,6 +44,12 @@ google/5.6.0/darwin_arm64/
 secrets/
 .google/credentials/
 
+# Large files that exceed GitHub's limit
+test/yellow_tripdata_2015-09.parquet
+1_intro/data/yellow_tripdata/yellow_tripdata_2021-01.csv
+test/data/green_tripdata_2015-01_modified.csv
+test/data/yellow_tripdata_2015-01.parquet
+test/data/green_tripdata_2015-11.parquet
 
 # PyInstaller
 #  Usually these files are written by a python script from a template
