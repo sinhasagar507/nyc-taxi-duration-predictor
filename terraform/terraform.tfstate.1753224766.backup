@@ -1,0 +1,55 @@
+{
+  "version": 4,
+  "terraform_version": "1.9.8",
+  "serial": 1,
+  "lineage": "16740d2c-da20-6491-2f87-13fe3e629735",
+  "outputs": {},
+  "resources": [
+    {
+      "mode": "managed",
+      "type": "google_storage_bucket",
+      "name": "demo-bucket",
+      "provider": "provider[\"registry.terraform.io/hashicorp/google\"]",
+      "instances": [
+        {
+          "schema_version": 1,
+          "attributes": {
+            "autoclass": [],
+            "cors": [],
+            "custom_placement_config": [],
+            "default_event_based_hold": false,
+            "effective_labels": {},
+            "enable_object_retention": false,
+            "encryption": [],
+            "force_destroy": false,
+            "id": "dtc-de-project_1",
+            "labels": {},
+            "lifecycle_rule": [],
+            "location": "US",
+            "logging": [],
+            "name": "dtc-de-project_1",
+            "project": "dtc-de-course-466501",
+            "public_access_prevention": "enforced",
+            "requester_pays": false,
+            "retention_policy": [],
+            "self_link": "https://www.googleapis.com/storage/v1/b/dtc-de-project_1",
+            "storage_class": "STANDARD",
+            "terraform_labels": {},
+            "timeouts": {
+              "create": null,
+              "read": null,
+              "update": null
+            },
+            "uniform_bucket_level_access": true,
+            "url": "gs://dtc-de-project_1",
+            "versioning": [],
+            "website": []
+          },
+          "sensitive_attributes": [],
+          "private": "eyJlMmJmYjczMC1lY2FhLTExZTYtOGY4OC0zNDM2M2JjN2M0YzAiOnsiY3JlYXRlIjo2MDAwMDAwMDAwMDAsInJlYWQiOjI0MDAwMDAwMDAwMCwidXBkYXRlIjoyNDAwMDAwMDAwMDB9LCJzY2hlbWFfdmVyc2lvbiI6IjEifQ=="
+        }
+      ]
+    }
+  ],
+  "check_results": null
+}
