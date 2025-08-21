@@ -1,0 +1,23 @@
+# Testing dependencies for Airflow DAGs
+pytest==7.4.3
+pytest-cov==4.1.0
+pytest-mock==3.12.0
+pytest-xdist==3.5.0
+pytest-html==4.1.1
+
+# Airflow testing utilities  
+apache-airflow[testing]==2.7.3
+
+# Mocking and test utilities
+responses==0.24.1
+freezegun==1.2.2
+factory-boy==3.3.0
+
+# Code quality
+black==23.11.0
+isort==5.12.0
+flake8==6.1.0
+mypy==1.7.1
+
+# Test data generation
+faker==20.1.0
