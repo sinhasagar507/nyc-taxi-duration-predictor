@@ -1,0 +1,4 @@
+[submodule "dbt/ny_taxi_analytics"]
+	path = dbt/ny_taxi_analytics
+	url = https://github.com/sinhasagar507/ny_taxi_analytics.git
+	branch = main
