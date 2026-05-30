@@ -33,11 +33,6 @@ and this table disagree, **the table is correct and the code must be reconciled 
     `dim_monthly_zones_revenue`, `taxi_zone_lookup`, + staging views
   - `dbt_ssinha` — **dev** dbt target (mirror of prod)
 
-### Known config drift (to be reconciled)
-- Stale project IDs in repo: `dtc-de-course-466501` (most files),
-  `dtc-de-course-440404` (`bigquery/queries/`). Real value: `dtc-de-project-492321`.
-- Stale bucket name in repo: `dtc-de-project_1`. Real value: `primary-data-dtc`.
-- PySpark reads dataset `dbt_production`; real dataset is **`dbt_prod`**.
 - dbt project is vendored as a **git submodule** at `dbt/ny_taxi_analytics`
   (remote: github.com/sinhasagar507/ny_taxi_analytics; remote stays authoritative — the
   submodule just pins a commit). It runs via **dbt Core** locally: Airflow's
@@ -58,6 +53,7 @@ nyc_taxi_durationprediction/
 ├── .github/workflows/dbt.yml  # CI/CD: dbt compile on PR, dbt build on main
 ├── spark/            # batch processing + ML notebooks (was 05_batch_processing/)
 ├── bigquery/         # SQL reference queries
+├── tests/            # project-wide test suite (see ## Testing below)
 ├── secrets/          # service-account keys (gitignored)
 └── notes/            # course notes / documentation
 ```
@@ -68,30 +64,86 @@ nyc_taxi_durationprediction/
 and `bigquery/queries/*.sql` (legacy homework against the dead `dtc-de-course-440404.nytaxi`
 project — FHV/2023-24/BQML scratch, not part of the current 2015-16 duration pipeline).
 
+## Testing
+
+Each development phase must pass its verification gate before the next phase begins.
+Run `pytest tests/` from the repo root. Unit tests run without credentials; integration
+tests auto-skip if credentials are unavailable.
+
+### Tiers
+
+| Tier | Requires | Run command | Gate for |
+| --- | --- | --- | --- |
+| **Unit** | nothing | `pytest tests/unit/` | every commit |
+| **Integration** | `GOOGLE_APPLICATION_CREDENTIALS` | `pytest tests/integration/` | Phase 1, Phase 3, Phase 4 |
+| **dbt** | credentials + dbt Core | `dbt compile --project-dir dbt/ny_taxi_analytics --profiles-dir dbt` | Phase 1 |
+| **E2E** | `docker compose up` | trigger DAGs in Airflow UI, check task states | Phase 1, Phase 4 |
+
+### Structure
+
+```
+tests/
+├── conftest.py                     # constants, auto-skip integration without creds
+├── unit/
+│   └── dags/
+│       ├── test_dag_integrity.py   # all 9 DAG files exist + parse as valid Python
+│       └── test_dag_config.py      # no stale IDs, env var usage, DAG chaining
+└── integration/
+    ├── test_gcs.py                 # bucket reachable, file counts per prefix
+    ├── test_bigquery.py            # datasets + external tables exist + queryable
+    └── test_dbt.py                 # dbt compile returns 0
+```
+
+### Quick-run reference
+
+```bash
+# Unit only (no credentials needed)
+pytest tests/unit/ -v
+
+# Integration (reads creds from secrets/ automatically)
+pytest tests/integration/ -v
+
+# Everything — integration auto-skips gracefully if no creds
+pytest tests/ -v
+
+# dbt compile
+GOOGLE_APPLICATION_CREDENTIALS=secrets/dtc-de-project-492321-970e67a252d8.json \
+  dbt compile --project-dir dbt/ny_taxi_analytics --profiles-dir dbt
+
+# E2E smoke test (manual)
+docker compose -f airflow/docker-compose.yaml up --build -d
+# → open localhost:8080, trigger nyc_taxi_gcs_yellow_dag, watch task states
+```
+
+Note: `airflow/tests/` contains legacy TDD stubs that require Airflow installed locally
+(not the Docker image). They are not part of the standard test run; treat them as
+documentation of expected DAG behaviour until they are migrated.
+
 ## Development Plan — sequenced for safety
 
-Each phase ends with a verification gate and its own commit. Do not mix phases.
+Each phase ends with a test-suite verification gate and its own commit. Do not mix phases.
 
-- **Phase 0 — Checkpoint.** Branch `refactor/restructure` off `main`; commit current
-  state. Confirm the pipeline runs as-is and record that green baseline. Ensure
-  `.gitignore` covers `secrets/`, `.venv/`, `google-cloud-sdk/`, local data dumps.
+- **✅ Phase 0 — Checkpoint.** Branch off `main`; committed current state. `.gitignore`
+  covers `secrets/`, `.venv/`, `google-cloud-sdk/`, local data dumps.
 
-- **Phase 1 — Reconcile config with live infra.** Point project / bucket / credentials
-  / dbt dataset at the real values above. Fix the known disconnects (empty green DAG,
-  climate GCS path, hardcoded IDs in external-table DAGs). *Verify:* DAGs parse,
-  external tables resolve, PySpark connects. Commit.
+- **✅ Phase 1 — Reconcile config with live infra.** All stale project/bucket IDs fixed.
+  Green ingest DAG created; climate path bug fixed; zone ingest DAG created; all 4
+  external-table DAGs migrated to env vars; ingest DAGs chained to external-table DAGs
+  via `TriggerDagRunOperator`; dbt submodule + dbt Core Airflow DAG + CI/CD wired;
+  PySpark pointed at `dbt_prod`.
+  *Verify:* `pytest tests/` green; `dbt compile` clean; `docker compose up --build`
+  succeeds; all DAGs load in Airflow UI without import errors.
 
 - **Phase 2 — Prune redundancy (isolated, reversible).** Remove only truly-unreferenced
   artifacts (grep for imports/paths first). Nothing else changes in this commit.
-  *Verify:* pipeline still green.
+  *Verify:* `pytest tests/` still green.
 
 - **Phase 3 — Restructure (mechanical moves only).** Move files into the target layout;
   update import paths, Docker volume mounts, and dbt project paths. No behavioral
-  changes. *Verify:* pipeline still green. Commit.
+  changes. *Verify:* `pytest tests/` green. Commit.
 
 - **Phase 4 — Refactor & harden (behavioral).** DRY the config (single source for
-  project/bucket), add DAG chaining (ingest → external table → dbt), parametrize date
-  ranges, vendor in the dbt project. Each change isolated + verified. Commit.
+  project/bucket), parametrize date ranges. Each change isolated + verified. Commit.
 
 - **Phase 5 — Document.** Update this file + README to match the final structure. Open PR.
 
