@@ -49,10 +49,10 @@ class TestGreenTaxiExternalTable:
     def test_external_table_sql_query_format(self, dagbag):
         """Test that the SQL query is properly formatted."""
         # GIVEN: Expected values from the DAG
-        project_id = 'dtc-de-course-466501'
+        project_id = 'dtc-de-project-492321'
         dataset_id = 'nyc_taxi_data'
         table_id = 'green_taxi_external_table'
-        bucket_name = 'dtc-de-project_1'
+        bucket_name = 'primary-data-dtc'
         source_folder = 'nyc_taxi_data/green_taxi_data/'
         
         # WHEN: We construct the expected SQL

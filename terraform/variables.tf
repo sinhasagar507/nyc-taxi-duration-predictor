@@ -1,14 +1,12 @@
 variable "credentials" {
   description = "My Credentials"
-  default     = "/Applications/saggydev/projects_learning/data_engineering_course/secrets/dtc-de-course-466501-e23cbf158abc.json"
-  #ex: if you have a directory where this file is called keys with your service account json file
-  #saved there as my-creds.json you could use default = "./keys/my-creds.json"
+  default     = "../secrets/dtc-de-project-492321-970e67a252d8.json"
 }
 
 
 variable "project" {
   description = "Project"
-  default     = "dtc-de-course-466501"
+  default     = "dtc-de-project-492321"
 }
 
 variable "region" {
@@ -32,7 +30,7 @@ variable "bq_dataset_name" {
 variable "gcs_bucket_name" {
   description = "My Storage Bucket Name"
   #Update the below to a unique bucket name
-  default = "dtc-de-project_1"
+  default = "primary-data-dtc"
 }
 
 variable "gcs_storage_class" {

@@ -66,8 +66,8 @@ x-airflow-common:
     _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:-}
     GOOGLE_APPLICATION_CREDENTIALS: /.google/credentials/google_credentials.json
     AIRFLOW_CONN_GOOGLE_CLOUD_DEFAULT: 'google-cloud-platform://?extra__google_cloud_platform__key_path=/.google/credentials/google_credentials.json'
-    GCP_PROJECT_ID: 'dtc-de-course-466501' 
-    GCP_GCS_BUCKET: 'dtc-de-project_1'
+    GCP_PROJECT_ID: 'dtc-de-project-492321'
+    GCP_GCS_BUCKET: 'primary-data-dtc'
 
     # PG_HOST: "${PG_HOST}"
     # PG_USER: "${PG_USER}"
@@ -79,6 +79,7 @@ x-airflow-common:
     - ./dags:/opt/airflow/dags
     - ./logs:/opt/airflow/logs
     - ./plugins:/opt/airflow/plugins
+    - ../dbt:/opt/airflow/dbt
     - ~/.google/credentials/:/.google/credentials:ro
 
   user: "${AIRFLOW_UID:-50000}:0"

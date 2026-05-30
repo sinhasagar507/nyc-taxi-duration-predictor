@@ -23,25 +23,13 @@ RUN pip install --no-cache-dir "apache-airflow==2.10.3" -r requirements.txt \
 # Set the shell options for better error handling
 SHELL ["/bin/bash", "-o", "pipefail", "-e", "-u", "-x", "-c"]
 
-# Return to root for further administrative tasks if needed
+# Install dbt Core (BigQuery adapter) in an ISOLATED virtualenv so its dependencies
+# never collide with Airflow's pinned set. DAGs invoke /opt/dbt-venv/bin/dbt via a
+# BashOperator. Keep this version in sync with dbt/requirements.txt.
 USER root
-
-# Install Google Cloud SDK
-ENV GCLOUD_HOME=/home/google-cloud-sdk
-ENV PATH="${GCLOUD_HOME}/bin/:${PATH}"
-
-RUN DOWNLOAD_URL="https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-darwin-arm.tar.gz" \
-    && TMP_DIR="$(mktemp -d)" \
-    && curl -fL "${DOWNLOAD_URL}" --output "${TMP_DIR}/google-cloud-sdk.tar.gz" \
-    && mkdir -p "${GCLOUD_HOME}" \
-    && tar xzf "${TMP_DIR}/google-cloud-sdk.tar.gz" -C "${GCLOUD_HOME}" --strip-components=1 \
-    && "${GCLOUD_HOME}/install.sh" \
-       --bash-completion=false \
-       --path-update=false \
-       --usage-reporting=false \
-       --quiet \
-    && rm -rf "${TMP_DIR}" \
-    && gcloud --version
+RUN python -m venv /opt/dbt-venv \
+    && /opt/dbt-venv/bin/pip install --no-cache-dir --upgrade pip \
+    && /opt/dbt-venv/bin/pip install --no-cache-dir dbt-bigquery==1.11.1
 
 # Set the working directory and revert to airflow user
 WORKDIR $AIRFLOW_HOME

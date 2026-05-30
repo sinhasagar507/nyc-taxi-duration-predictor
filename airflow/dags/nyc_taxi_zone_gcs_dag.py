@@ -7,27 +7,23 @@ from airflow import DAG
 from airflow.operators.python import PythonOperator
 from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 from google.cloud import storage
-from airflow.providers.google.cloud.operators.bigquery import BigQueryCreateExternalTableOperator
 
 # === Configuration ===
 PROJECT_ID = os.environ.get("GCP_PROJECT_ID")
 BUCKET = os.environ.get("GCP_GCS_BUCKET")
 PATH_TO_LOCAL_HOME = os.environ.get("AIRFLOW_HOME", "/opt/airflow/")
-TRIPDATA_URL_PREFIX = "https://d37ci6vzurychx.cloudfront.net/trip-data"
-TAXI_BIGQUERY_DATASET_ID = os.environ.get("BIGQUERY_DATASET", "nyc_tlc_trips")
-YELLOW_TAXI_BIGQUERY_TABLE_ID = os.environ.get("YELLOW_TRIP_BIGQUERY_DATASET", "yellow_taxi_data")
+ZONE_LOOKUP_URL = "https://d37ci6vzurychx.cloudfront.net/misc/taxi_zone_lookup.csv"
+ZONE_LOOKUP_FILE = "taxi_zone_lookup.csv"
 
 
-# === Task: Download File using curl -L ===
-def download_file(execution_date, **context):
-    file_name = f"yellow_tripdata_{execution_date.strftime('%Y-%m')}.parquet"
-    url = f"{TRIPDATA_URL_PREFIX}/{file_name}"
-    local_path = os.path.join(PATH_TO_LOCAL_HOME, file_name)
+# === Task: Download the zone lookup CSV ===
+def download_file(**context):
+    local_path = os.path.join(PATH_TO_LOCAL_HOME, ZONE_LOOKUP_FILE)
 
-    logging.info(f"📥 Downloading using curl -L: {url}")
+    logging.info(f"📥 Downloading using curl -L: {ZONE_LOOKUP_URL}")
     try:
         subprocess.run(
-            ["curl", "-L", "-o", local_path, url],
+            ["curl", "-L", "-o", local_path, ZONE_LOOKUP_URL],
             check=True
         )
         logging.info(f"✅ Downloaded to: {local_path}")
@@ -37,10 +33,9 @@ def download_file(execution_date, **context):
 
 
 # === Task: Upload to GCS ===
-def upload_to_gcs(bucket, execution_date, **context):
-    file_name = f"yellow_tripdata_{execution_date.strftime('%Y-%m')}.parquet"
-    local_file = os.path.join(PATH_TO_LOCAL_HOME, file_name)
-    object_name = f"nyc_taxi_data/yellow_taxi_data/{file_name}"
+def upload_to_gcs(bucket, **context):
+    local_file = os.path.join(PATH_TO_LOCAL_HOME, ZONE_LOOKUP_FILE)
+    object_name = f"nyc_taxi_data/taxi_lookup_data/{ZONE_LOOKUP_FILE}"
 
     # GCS Upload Workaround
     storage.blob._MAX_MULTIPART_SIZE = 5 * 1024 * 1024
@@ -51,13 +46,12 @@ def upload_to_gcs(bucket, execution_date, **context):
     blob = bucket_obj.blob(object_name)
     blob.upload_from_filename(local_file)
 
-    logging.info(f"📤 Uploaded {file_name} to gs://{bucket}/{object_name}")
+    logging.info(f"📤 Uploaded {ZONE_LOOKUP_FILE} to gs://{bucket}/{object_name}")
 
 
 # === Task: Remove local file ===
-def remove_local_file(execution_date, **context):
-    file_name = f"yellow_tripdata_{execution_date.strftime('%Y-%m')}.parquet"
-    file_path = os.path.join(PATH_TO_LOCAL_HOME, file_name)
+def remove_local_file(**context):
+    file_path = os.path.join(PATH_TO_LOCAL_HOME, ZONE_LOOKUP_FILE)
 
     if os.path.exists(file_path):
         os.remove(file_path)
@@ -73,13 +67,13 @@ default_args = {
     "retries": 1,
 }
 
+# Zone lookup is static reference metadata — run once on demand, no backfill.
 with DAG(
-    dag_id="nyc_taxi_data_ingestion_dag",
+    dag_id="nyc_taxi_zone_ingestion_dag",
     default_args=default_args,
     start_date=datetime(2015, 1, 1),
-    end_date=datetime(2016, 12, 31),
-    schedule_interval='0 6 1 * *',
-    catchup=True,
+    schedule_interval=None,
+    catchup=False,
     max_active_runs=1,
     tags=['dtc-de'],
 ) as dag:
@@ -105,7 +99,7 @@ with DAG(
 
     trigger_external_table_task = TriggerDagRunOperator(
         task_id="trigger_external_table",
-        trigger_dag_id="create_external_table_yellow_taxi",
+        trigger_dag_id="create_external_table_taxi_zone",
         wait_for_completion=False,
     )
 
