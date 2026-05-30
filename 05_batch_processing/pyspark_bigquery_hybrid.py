@@ -15,8 +15,8 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 # GCP project info
-PROJECT_ID = "dtc-de-course-466501"
-DATASET_ID = "dbt_production"
+PROJECT_ID = "dtc-de-project-492321"
+DATASET_ID = "dbt_prod"
 
 def create_spark_session(app_name="Local PySpark with BigQuery"):
     """Create and return a Spark session configured for BigQuery access"""

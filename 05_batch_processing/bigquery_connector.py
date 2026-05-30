@@ -222,8 +222,8 @@ if __name__ == "__main__":
     spark = create_spark_session()
     
     # Your GCP project details
-    PROJECT_ID = "dtc-de-course-466501"
-    DATASET_ID = "dbt_production"
+    PROJECT_ID = "dtc-de-project-492321"
+    DATASET_ID = "dbt_prod"
     
     print("\n=== Example 1: Loading simple table ===")
     df_zones = load_table(spark, "dim_zones", PROJECT_ID, DATASET_ID, limit=10)

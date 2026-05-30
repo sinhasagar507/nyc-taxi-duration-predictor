@@ -45,8 +45,8 @@ def try_bigquery_connection(connector_version="0.32.0"):
     """Try connecting to BigQuery with different options"""
     
     # GCP project info
-    PROJECT_ID = "dtc-de-course-466501"
-    DATASET_ID = "dbt_production"
+    PROJECT_ID = "dtc-de-project-492321"
+    DATASET_ID = "dbt_prod"
     
     print(f"\n\n{'='*80}")
     print(f"Attempting BigQuery connection with connector v{connector_version}")

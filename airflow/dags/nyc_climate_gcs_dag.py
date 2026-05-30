@@ -7,6 +7,7 @@ from airflow import DAG
 from airflow.utils.dates import days_ago
 from airflow.operators.bash import BashOperator
 from airflow.operators.python import PythonOperator
+from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 
 from google.cloud import storage
 from airflow.providers.google.cloud.operators.bigquery import BigQueryCreateExternalTableOperator
@@ -130,7 +131,7 @@ with DAG(
         python_callable=upload_to_gcs,
         op_kwargs={
             "bucket": BUCKET,
-            "object_name": f"raw/nyc_climate_data/{CLIMATE_DATA_TARGET_PARQUET}",
+            "object_name": f"nyc_climate_data/{CLIMATE_DATA_TARGET_PARQUET}",
             "local_file": f"{PATH_TO_LOCAL_HOME}/{CLIMATE_DATA_DIRECTORY}/{CLIMATE_DATA_TARGET_PARQUET}",
         },
     )
@@ -161,4 +162,10 @@ with DAG(
     },
   )
 
-    download_dataset_task >> convert_to_parquet_task >> local_to_gcs_task >> cleanup_local_file_task
+    trigger_external_table_task = TriggerDagRunOperator(
+        task_id="trigger_external_table",
+        trigger_dag_id="create_external_table_climate_data",
+        wait_for_completion=False,
+    )
+
+    download_dataset_task >> convert_to_parquet_task >> local_to_gcs_task >> cleanup_local_file_task >> trigger_external_table_task
