@@ -203,3 +203,22 @@ cython_debug/
 #  and can be added to the global gitignore or merged into this file.  For a more nuclear
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
+
+# === Vendored Google Cloud SDK (use a system install instead — do NOT commit) ===
+google-cloud-sdk/
+google-cloud-cli*/
+*.tar.gz
+
+# === Local data dumps — multi-GB, never commit ===
+nyc_taxi_data/
+nyc_climate_data/
+spark_data/
+*.parquet
+
+# === dbt build artifacts ===
+dbt_packages/
+**/dbt_packages/
+**/target/
+**/logs/
+.user.yml
+**/.user.yml
