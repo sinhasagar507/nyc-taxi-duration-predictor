@@ -1,0 +1,41 @@
+# dbt profiles for the ny_taxi_analytics project (profile name must match the
+# submodule's dbt_project.yml: `profile: 'default'`).
+#
+# Kept OUTSIDE the submodule so the remote repo stays authoritative. Point dbt at it
+# with `--profiles-dir`:  dbt build --project-dir dbt/ny_taxi_analytics --profiles-dir dbt
+#
+# No secrets live here: the service-account key is resolved from the
+# GOOGLE_APPLICATION_CREDENTIALS env var, which is set differently per context:
+#   - local:   export GOOGLE_APPLICATION_CREDENTIALS=secrets/dtc-de-project-492321-970e67a252d8.json
+#   - Airflow: /.google/credentials/google_credentials.json (already mounted)
+#   - CI:      the workflow writes the key from a GitHub secret and sets the env var
+default:
+  target: dev
+  outputs:
+    dev:
+      type: bigquery
+      method: service-account
+      project: dtc-de-project-492321
+      dataset: dbt_dev
+      location: US
+      threads: 4
+      timeout_seconds: 300
+      keyfile: "{{ env_var('GOOGLE_APPLICATION_CREDENTIALS') }}"
+    ci:
+      type: bigquery
+      method: service-account
+      project: dtc-de-project-492321
+      dataset: dbt_ci
+      location: US
+      threads: 4
+      timeout_seconds: 300
+      keyfile: "{{ env_var('GOOGLE_APPLICATION_CREDENTIALS') }}"
+    prod:
+      type: bigquery
+      method: service-account
+      project: dtc-de-project-492321
+      dataset: dbt_prod
+      location: US
+      threads: 4
+      timeout_seconds: 300
+      keyfile: "{{ env_var('GOOGLE_APPLICATION_CREDENTIALS') }}"

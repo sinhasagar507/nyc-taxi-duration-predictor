@@ -1,0 +1,5 @@
+# dbt Core + BigQuery adapter for the ny_taxi_analytics project.
+# Pinned to the versions verified against this project (dbt 1.11, Python 3.12).
+# Used by: local dev venv, the GitHub Actions CI workflow, and the Airflow image's
+# isolated /opt/dbt-venv (kept separate from Airflow's own dependencies).
+dbt-bigquery==1.11.1

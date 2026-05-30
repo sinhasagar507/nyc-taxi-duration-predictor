@@ -1,0 +1,58 @@
+name: dbt
+
+# CI/CD for the dbt layer (ny_taxi_analytics, vendored as a git submodule).
+#   - Pull requests: `dbt compile` — fast, no warehouse writes; catches broken SQL,
+#     unresolved refs/sources, and bad Jinja.
+#   - Pushes to main: `dbt build` into the isolated `dbt_ci` dataset — runs seeds,
+#     models, and tests end-to-end. Production refreshes are owned by Airflow
+#     (the dbt_build_marts DAG, target=prod), so CI never writes to dbt_prod.
+#
+# Required repo secret:
+#   GCP_SA_KEY — full JSON of the service account key
+#                (secrets/dtc-de-project-492321-970e67a252d8.json)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  dbt:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (with the dbt submodule)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dbt
+        run: pip install -r dbt/requirements.txt
+
+      - name: Authenticate to BigQuery
+        env:
+          GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+        run: |
+          if [ -z "$GCP_SA_KEY" ]; then
+            echo "::error::GCP_SA_KEY secret is not set. Add the service-account JSON as a repo secret."
+            exit 1
+          fi
+          printf '%s' "$GCP_SA_KEY" > "$RUNNER_TEMP/gcp-key.json"
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/gcp-key.json" >> "$GITHUB_ENV"
+
+      - name: dbt deps
+        run: dbt deps --project-dir dbt/ny_taxi_analytics
+
+      - name: dbt compile (PR validation — no writes)
+        if: github.event_name == 'pull_request'
+        run: dbt compile --project-dir dbt/ny_taxi_analytics --profiles-dir dbt --target ci
+
+      - name: dbt build (main — full run + tests into dbt_ci)
+        if: github.event_name != 'pull_request'
+        run: dbt build --project-dir dbt/ny_taxi_analytics --profiles-dir dbt --target ci
