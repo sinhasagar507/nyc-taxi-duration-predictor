@@ -147,6 +147,13 @@ Each phase ends with a test-suite verification gate and its own commit. Do not m
 
 - **Phase 5 — Document.** Update this file + README to match the final structure. Open PR.
 
+## Commit Conventions
+
+- **Never add `Co-Authored-By` trailers to commit messages.** The repository owner does
+  not want AI model names to appear as contributors or co-authors on GitHub. Commit solely
+  under the git user identity configured in the repo (`Sagar Sinha`). This applies to all
+  commits on all branches, including automated or agent-driven commits.
+
 ## Conventions & Gotchas
 - **Single source of truth** for project/bucket = Airflow `docker-compose.yaml` env vars
   (`GCP_PROJECT_ID`, `GCP_GCS_BUCKET`); DAGs read them via `os.environ`. All ingest *and*
