@@ -1,0 +1,10 @@
+# ML / Spark environment — containerized (see spark/ml/Dockerfile).
+# Pinned to the versions validated on the host during Phase 1 prep.
+# Later phases add their own libs here (xgboost, lightgbm, catboost, torch,
+# category-encoders, shap, optuna) — keep them in this file, not on the host.
+pyspark==4.1.2
+pandas==2.3.1
+pyarrow==21.0.0
+scikit-learn==1.7.1
+jupyterlab>=4.2,<5
+pytest==8.4.1
