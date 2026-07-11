@@ -8,8 +8,8 @@ name: dbt
 #     (the dbt_build_marts DAG, target=prod), so CI never writes to dbt_prod.
 #
 # Required repo secret:
-#   GCP_SA_KEY — full JSON of the service account key
-#                (secrets/dtc-de-project-492321-970e67a252d8.json)
+#   GCP_SA_KEY — full JSON of the service account key (secrets/gcp-credentials.json).
+#                Update this repo secret whenever the GCP account/key is rotated.
 
 on:
   push:

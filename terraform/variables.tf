@@ -1,11 +1,11 @@
 variable "credentials" {
-  description = "My Credentials"
-  default     = "../secrets/dtc-de-project-492321-970e67a252d8.json"
+  description = "Path to the GCP service-account key (stable, project-agnostic filename)"
+  default     = "../secrets/gcp-credentials.json"
 }
 
 
 variable "project" {
-  description = "Project"
+  description = "GCP project ID (override via TF_VAR_project / GCP_PROJECT_ID on account swap)"
   default     = "dtc-de-project-492321"
 }
 

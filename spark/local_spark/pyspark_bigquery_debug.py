@@ -44,9 +44,10 @@ def create_spark_session(app_name="BigQuery Debug",
 def try_bigquery_connection(connector_version="0.32.0"):
     """Try connecting to BigQuery with different options"""
     
-    # GCP project info
-    PROJECT_ID = "dtc-de-project-492321"
-    DATASET_ID = "dbt_prod"
+    # GCP project info — single source of truth is the GCP_PROJECT_ID env var (repo-root
+    # .env); defaults keep the current project working with no extra config.
+    PROJECT_ID = os.environ.get("GCP_PROJECT_ID", "dtc-de-project-492321")
+    DATASET_ID = os.environ.get("GCP_DBT_DATASET", "dbt_prod")
     
     print(f"\n\n{'='*80}")
     print(f"Attempting BigQuery connection with connector v{connector_version}")
