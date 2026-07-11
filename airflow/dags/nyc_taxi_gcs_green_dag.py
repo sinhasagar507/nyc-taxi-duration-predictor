@@ -17,6 +17,11 @@ TRIPDATA_URL_PREFIX = "https://d37ci6vzurychx.cloudfront.net/trip-data"
 TAXI_BIGQUERY_DATASET_ID = os.environ.get("BIGQUERY_DATASET", "nyc_tlc_trips")
 GREEN_TAXI_BIGQUERY_TABLE_ID = os.environ.get("GREEN_TRIP_BIGQUERY_DATASET", "green_taxi_data")
 
+# Backfill window (catchup) — single source of truth is docker-compose.yaml
+# (INGEST_START_DATE / INGEST_END_DATE, YYYY-MM-DD); defaults match TLC 2015-2016 data.
+INGEST_START_DATE = datetime.strptime(os.environ.get("INGEST_START_DATE", "2015-01-01"), "%Y-%m-%d")
+INGEST_END_DATE = datetime.strptime(os.environ.get("INGEST_END_DATE", "2016-12-31"), "%Y-%m-%d")
+
 
 # === Task: Download File using curl -L ===
 def download_file(execution_date, **context):
@@ -76,8 +81,8 @@ default_args = {
 with DAG(
     dag_id="nyc_green_taxi_data_ingestion_dag",
     default_args=default_args,
-    start_date=datetime(2015, 1, 1),
-    end_date=datetime(2016, 12, 31),
+    start_date=INGEST_START_DATE,
+    end_date=INGEST_END_DATE,
     schedule_interval='0 6 1 * *',
     catchup=True,
     max_active_runs=1,

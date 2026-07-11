@@ -68,6 +68,9 @@ x-airflow-common:
     AIRFLOW_CONN_GOOGLE_CLOUD_DEFAULT: 'google-cloud-platform://?extra__google_cloud_platform__key_path=/.google/credentials/google_credentials.json'
     GCP_PROJECT_ID: 'dtc-de-project-492321'
     GCP_GCS_BUCKET: 'primary-data-dtc'
+    # Ingest backfill window (single source of truth; DAGs read via os.environ)
+    INGEST_START_DATE: '2015-01-01'
+    INGEST_END_DATE: '2016-12-31'
 
     # PG_HOST: "${PG_HOST}"
     # PG_USER: "${PG_USER}"

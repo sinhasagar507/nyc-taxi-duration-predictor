@@ -65,6 +65,47 @@ class TestEnvVarUsage:
         )
 
 
+class TestParametrizedDateRanges:
+    """Ingest backfill window must come from env vars, not hardcoded datetimes.
+
+    Single source of truth is docker-compose.yaml (INGEST_START_DATE /
+    INGEST_END_DATE); DAGs read them via os.environ with the 2015-2016
+    window as the fallback default.
+    """
+
+    CATCHUP_INGEST_DAGS = [
+        "nyc_taxi_gcs_yellow_dag.py",
+        "nyc_taxi_gcs_green_dag.py",
+    ]
+
+    @pytest.mark.parametrize("dag_file", CATCHUP_INGEST_DAGS)
+    def test_ingest_dag_has_no_hardcoded_date_range(self, dag_file):
+        content = (DAGS_DIR / dag_file).read_text()
+        hardcoded = [
+            lit for lit in ("datetime(2015", "datetime(2016") if lit in content
+        ]
+        assert not hardcoded, (
+            f"{dag_file} hardcodes the backfill window ({hardcoded}); "
+            f"read INGEST_START_DATE / INGEST_END_DATE from the environment instead"
+        )
+
+    @pytest.mark.parametrize("dag_file", CATCHUP_INGEST_DAGS)
+    def test_ingest_dag_reads_date_range_from_env(self, dag_file):
+        content = (DAGS_DIR / dag_file).read_text()
+        for var in ("INGEST_START_DATE", "INGEST_END_DATE"):
+            assert var in content, (
+                f"{dag_file} must read the backfill window from the {var} env var"
+            )
+
+    def test_docker_compose_defines_ingest_date_range(self):
+        compose = (DAGS_DIR.parents[0] / "docker-compose.yaml").read_text()
+        for var in ("INGEST_START_DATE", "INGEST_END_DATE"):
+            assert var in compose, (
+                f"airflow/docker-compose.yaml must define {var} (single source of truth "
+                f"for the ingest backfill window)"
+            )
+
+
 class TestDAGChaining:
     @pytest.mark.parametrize("ingest_dag,downstream_id", INGEST_TO_DOWNSTREAM.items())
     def test_ingest_dag_triggers_external_table_dag(self, ingest_dag, downstream_id):
