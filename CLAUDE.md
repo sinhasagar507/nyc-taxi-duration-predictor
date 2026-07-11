@@ -12,26 +12,28 @@ TLC source data → GCS (raw) → BigQuery external tables → dbt (ELT)
    → fact/dim tables → PySpark duration model + Looker Studio analytics
 ```
 
-## Live GCP Infrastructure — SOURCE OF TRUTH
+## GCP Infrastructure — reference only (account retired, working locally)
 
-Verified directly via `gcloud`/client libraries against the live project. When code
-and this table disagree, **the table is correct and the code must be reconciled to it.**
+> The GCP project this pipeline originally ran against has been **retired** (trial
+> exhausted / account disabled). **Do not treat any GCP resource below as live**, and
+> do not expect credentials to be present. Work is **local for now**; the marts were
+> backed up locally and to GCS before shutdown. The identifiers (project ID, service
+> account, keyfile) have been removed on purpose — supply your own via
+> `GOOGLE_APPLICATION_CREDENTIALS` if/when you reconnect to a live project. The layout
+> below is retained only as a structural reference for the data model.
 
-- **Project ID:** `dtc-de-project-492321`
-- **Service account:** `dtc-de-course@dtc-de-project-492321.iam.gserviceaccount.com`
-- **Credentials file:** `secrets/dtc-de-project-492321-970e67a252d8.json`
-- **GCS bucket:** `primary-data-dtc` (location US)
+- **GCS bucket layout (reference):** `primary-data-dtc` (location US)
   - `nyc_taxi_data/yellow_taxi_data/` — 24 parquet files (2015-01 … 2016-12)
   - `nyc_taxi_data/green_taxi_data/`  — 24 parquet files (2015-01 … 2016-12)
   - `nyc_taxi_data/taxi_lookup_data/taxi_zone_lookup.csv`
   - `nyc_climate_data/climate_data.parquet`
-- **BigQuery datasets:**
+- **BigQuery datasets (reference):**
   - `nyc_taxi_data` — `yellow_taxi_external_table`, `green_taxi_external_table` (EXTERNAL).
-    ⚠️ `taxi_zone_external_table` is **not yet created** (CSV is in GCS, no table over it).
+    `taxi_zone_external_table` was never created (CSV is in GCS, no table over it).
   - `nyc_climate_data` — `climate_external_table` (EXTERNAL)
-  - `dbt_prod` — **prod** dbt target: `fact_trips`, `dim_zones`,
+  - `dbt_prod` — prod dbt target: `fact_trips`, `dim_zones`,
     `dim_monthly_zones_revenue`, `taxi_zone_lookup`, + staging views
-  - `dbt_ssinha` — **dev** dbt target (mirror of prod)
+  - `dbt_ssinha` — dev dbt target (mirror of prod)
 
 - dbt project is vendored as a **git submodule** at `dbt/ny_taxi_analytics`
   (remote: github.com/sinhasagar507/ny_taxi_analytics; remote stays authoritative — the
@@ -63,6 +65,33 @@ nyc_taxi_durationprediction/
 `gcs_storage/`, `spark_data/`, `google-cloud-sdk/` (vendored SDK), `project_architecture/`,
 and `bigquery/queries/*.sql` (legacy homework against the dead `dtc-de-course-440404.nytaxi`
 project — FHV/2023-24/BQML scratch, not part of the current 2015-16 duration pipeline).
+
+## Environments — venv vs Docker
+
+Rule of thumb: **runs unattended on a schedule → Docker; human-in-the-loop → host `.venv`.**
+
+- **Host `.venv` (repo root, Python 3.13):** pytest, dbt CLI iteration, PySpark/ML
+  notebooks, ad-hoc scripts. Invoke it explicitly (`.venv/bin/pytest`, `.venv/bin/python`,
+  `.venv/bin/dbt`) — never rely on shell activation, never use system python/pip, and
+  don't create additional venvs. New Python deps for tests/ML/dbt go here (and into the
+  relevant requirements file). This tooling never deploys.
+- **Docker = Airflow only** (`airflow/docker-compose.yaml` + `dockerfile`). Anything a
+  DAG imports at runtime goes in the Airflow image, never on the host. The image builds
+  its own isolated dbt venv at `/opt/dbt-venv` — that is not the host `.venv`.
+- This repo **intentionally overrides the global Docker-first policy** for the
+  test/ML/dbt developer workflows; do not containerize them.
+
+### Deployment split (target: GCP, single GCE VM running the compose stack)
+
+- **Deploys:** Airflow image + DAGs (ingest → external tables → `dbt_build_marts`),
+  dbt project via the submodule pin, Terraform-managed infra (bucket, BQ datasets).
+- **Stays local:** notebooks, EDA artifacts, `spark/head.csv`, `migration_backup/`,
+  ML experiments. Tests run locally + in CI, not on the VM.
+- **Auth:** keyfile via `GOOGLE_APPLICATION_CREDENTIALS` locally/CI; on the VM use an
+  attached service account (ADC) — no keyfiles inside images or git, ever.
+- **Prod images are built on the VM itself** (decided 2026-07-10): clone the repo on the
+  VM and `docker compose up --build` there. This sidesteps the Apple-Silicon/amd64
+  mismatch entirely — local Mac builds are dev-only and must never be pushed to the VM.
 
 ## Testing
 
@@ -106,8 +135,8 @@ pytest tests/integration/ -v
 # Everything — integration auto-skips gracefully if no creds
 pytest tests/ -v
 
-# dbt compile
-GOOGLE_APPLICATION_CREDENTIALS=secrets/dtc-de-project-492321-970e67a252d8.json \
+# dbt compile (supply your own keyfile if reconnecting to a live GCP project)
+GOOGLE_APPLICATION_CREDENTIALS=secrets/<your-keyfile>.json \
   dbt compile --project-dir dbt/ny_taxi_analytics --profiles-dir dbt
 
 # E2E smoke test (manual)
@@ -164,7 +193,7 @@ Each phase ends with a test-suite verification gate and its own commit. Do not m
   secret is committed): local CLI, Airflow (`dbt_build_marts` DAG → isolated
   `/opt/dbt-venv` built in the dockerfile, target `prod`), and CI (`.github/workflows/dbt.yml`,
   target `ci` → `dbt_ci` dataset). Local run:
-  `GOOGLE_APPLICATION_CREDENTIALS=secrets/…492321….json dbt build --project-dir dbt/ny_taxi_analytics --profiles-dir dbt`.
+  `GOOGLE_APPLICATION_CREDENTIALS=secrets/<your-keyfile>.json dbt build --project-dir dbt/ny_taxi_analytics --profiles-dir dbt`.
   CI needs the `GCP_SA_KEY` repo secret. dbt artifacts (`target/`, `dbt_packages/`) land
   inside the submodule and are gitignored there. Edit dbt models in the **remote repo**,
   then bump the submodule pointer — don't edit inside the submodule here.
