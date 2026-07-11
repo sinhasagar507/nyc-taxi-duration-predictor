@@ -1,2 +1,6 @@
-apache-airflow-providers-google
-pyarrow
+# Pinned to the official Airflow 2.10.3 constraints (constraints-2.10.3/constraints-3.12.txt)
+# so image builds are reproducible across machines (local Mac vs GCE VM).
+# If the Airflow base image version in the dockerfile changes, re-pin from the matching
+# constraints file: https://raw.githubusercontent.com/apache/airflow/constraints-<ver>/constraints-3.12.txt
+apache-airflow-providers-google==10.25.0
+pyarrow==18.0.0
