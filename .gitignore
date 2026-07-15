@@ -223,3 +223,9 @@ dbt_packages/
 .user.yml
 **/.user.yml
 migration_backup/
+
+# === Local scratch artifacts (not repo content) ===
+project-status-phase5.pdf
+spark/head.csv
+spark/Demo Spark notebook.ipynb
+spark/nyc_taxi_duration_prediction_1.ipynb
