@@ -163,18 +163,21 @@ Each phase ends with a test-suite verification gate and its own commit. Do not m
   *Verify:* `pytest tests/` green; `dbt compile` clean; `docker compose up --build`
   succeeds; all DAGs load in Airflow UI without import errors.
 
-- **Phase 2 — Prune redundancy (isolated, reversible).** Remove only truly-unreferenced
-  artifacts (grep for imports/paths first). Nothing else changes in this commit.
-  *Verify:* `pytest tests/` still green.
+- **✅ Phase 2 — Prune redundancy (isolated, reversible).** Removed truly-unreferenced
+  learning-exercise artifacts (legacy BQ homework, experimental notebooks,
+  `docker_nana_tutorial`). *Verified:* `pytest tests/` green.
 
-- **Phase 3 — Restructure (mechanical moves only).** Move files into the target layout;
-  update import paths, Docker volume mounts, and dbt project paths. No behavioral
-  changes. *Verify:* `pytest tests/` green. Commit.
+- **✅ Phase 3 — Restructure (mechanical moves only).** Renamed `05_batch_processing/` →
+  `spark/` and moved files into the target layout; import paths, Docker volume mounts, and
+  dbt project paths updated. No behavioral changes. *Verified:* `pytest tests/` green.
 
-- **Phase 4 — Refactor & harden (behavioral).** DRY the config (single source for
-  project/bucket), parametrize date ranges. Each change isolated + verified. Commit.
+- **✅ Phase 4 — Refactor & harden (behavioral).** DRY'd config to a single source
+  (`GCP_PROJECT_ID` / `GCP_GCS_BUCKET`); decoupled credentials from the project-specific
+  keyfile name (stable path `secrets/gcp-credentials.json`, guard test); parametrized the
+  ingest window via `INGEST_START_DATE` / `INGEST_END_DATE`. *Verified:* `pytest tests/` green.
 
-- **Phase 5 — Document.** Update this file + README to match the final structure. Open PR.
+- **⏳ Phase 5 — Document (in progress).** Reconcile this file + README to the final
+  structure and retired-account reality. Open PR.
 
 ## Commit Conventions
 

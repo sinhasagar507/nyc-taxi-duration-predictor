@@ -27,12 +27,17 @@ TLC source data (2015-2016)
 
 ---
 
-## Live GCP Infrastructure
+## GCP Infrastructure — reference only (account retired)
 
-| Resource | Value |
+> The GCP project this pipeline originally ran against has been **retired** (trial
+> exhausted). Treat nothing below as live, and do not expect credentials to be present.
+> Work is **local for now**; the marts were backed up locally and to GCS before shutdown.
+> Supply your own project via `GOOGLE_APPLICATION_CREDENTIALS` (stable path
+> `secrets/gcp-credentials.json`) and set `GCP_PROJECT_ID` / `GCP_GCS_BUCKET` if you
+> reconnect to a live project. The layout below is retained as a structural reference.
+
+| Resource | Value (reference) |
 | --- | --- |
-| Project ID | `dtc-de-project-492321` |
-| Service account | `dtc-de-course@dtc-de-project-492321.iam.gserviceaccount.com` |
 | GCS bucket | `primary-data-dtc` (US) |
 | BigQuery datasets | `nyc_taxi_data`, `nyc_climate_data`, `dbt_prod`, `dbt_ssinha` |
 | dbt prod target | `dbt_prod` |
@@ -88,9 +93,11 @@ nyc_taxi_durationprediction/
 - Hardened `.gitignore` covering `secrets/`, `.venv/`, vendored SDKs, and local data dumps.
 - Git history cleaned: removed accidentally committed GCP credentials and vendored `google-cloud-sdk/` (repository shrank from 11 GB to 82 MB via `git filter-repo`).
 
-### Phase 1 — Pipeline reconciliation with live infrastructure
+### Phase 1 — Pipeline reconciliation with infrastructure
 
-All configuration reconciled against the live GCP project (`dtc-de-project-492321`).
+All configuration reconciled against the GCP project the pipeline ran on (since retired).
+Stale project/bucket IDs were fixed and DAGs switched to reading config from environment
+variables.
 
 **Airflow DAGs (9 total):**
 
@@ -132,17 +139,41 @@ Removed learning-exercise artifacts that were not part of the live pipeline: leg
 
 Renamed `05_batch_processing/` to `spark/` to match the target directory layout documented in `CLAUDE.md`.
 
-### Test suite (59 tests, all passing)
+### Phase 4 — Refactor and hardening
+
+- **Config decoupled from credentials.** The service-account key is referenced only via a
+  stable, project-agnostic path (`secrets/gcp-credentials.json`) and the
+  `GOOGLE_APPLICATION_CREDENTIALS` env var. Swapping GCP projects is a one-file drop plus a
+  single `.env` edit — no repo-wide hunt. A guard test (`test_credential_decoupling.py`)
+  scans tracked code/config and fails if the old project-specific key filename reappears.
+- **Ingest date range parametrized.** The backfill window is driven by `INGEST_START_DATE`
+  / `INGEST_END_DATE` env vars (default `2015-01-01` … `2016-12-31`) rather than hardcoded
+  dates, so extending coverage needs no DAG edits.
+- **Single source of truth** for project/bucket remains the Airflow `docker-compose.yaml`
+  env vars (`GCP_PROJECT_ID`, `GCP_GCS_BUCKET`), read by DAGs and tests via `os.environ`.
+
+### Phase 5 — Documentation
+
+This README and `CLAUDE.md` reconciled to the final structure and the retired-account
+reality (no live GCP resources or credentials assumed).
+
+### Test suite (131 tests, all passing)
 
 ```text
 tests/
-├── unit/dags/
-│   ├── test_dag_integrity.py   # all 9 DAG files exist and parse as valid Python
-│   └── test_dag_config.py      # no stale IDs, env var usage, DAG chaining
+├── unit/
+│   ├── dags/
+│   │   ├── test_dag_integrity.py       # all 9 DAG files exist and parse as valid Python
+│   │   └── test_dag_config.py          # no stale IDs, env var usage, DAG chaining
+│   ├── ml/                             # fare-model prep/feature/eval unit tests
+│   │   ├── test_features.py
+│   │   ├── test_preprocess.py
+│   │   └── test_evaluate.py
+│   └── test_credential_decoupling.py   # guard: old keyfile name never re-hardcoded
 └── integration/
-    ├── test_gcs.py             # bucket reachable, file counts per prefix
-    ├── test_bigquery.py        # datasets, external tables, dbt_prod tables
-    └── test_dbt.py             # dbt compile returns exit code 0
+    ├── test_gcs.py                     # bucket reachable, file counts per prefix
+    ├── test_bigquery.py                # datasets, external tables, dbt_prod tables
+    └── test_dbt.py                     # dbt compile returns exit code 0
 ```
 
 Unit tests require no credentials. Integration tests auto-skip if `GOOGLE_APPLICATION_CREDENTIALS` is not set.
@@ -155,7 +186,8 @@ Unit tests require no credentials. Integration tests auto-skip if `GOOGLE_APPLIC
 
 - Docker and Docker Compose
 - Python 3.12+ with a virtual environment
-- GCP service account key at `secrets/dtc-de-project-492321-970e67a252d8.json`
+- A GCP service-account key at the stable path `secrets/gcp-credentials.json` (gitignored;
+  supply your own if reconnecting to a live project)
 
 ### Start Airflow
 
@@ -174,7 +206,7 @@ Open `http://localhost:8080`. Trigger DAGs in this order:
 ### Run dbt locally
 
 ```bash
-GOOGLE_APPLICATION_CREDENTIALS=secrets/dtc-de-project-492321-970e67a252d8.json \
+GOOGLE_APPLICATION_CREDENTIALS=secrets/gcp-credentials.json \
   dbt build --project-dir dbt/ny_taxi_analytics --profiles-dir dbt
 ```
 
@@ -275,7 +307,10 @@ Reference data sources:
 - NYC LION street network: https://www.nyc.gov/content/planning/pages/resources/datasets/lion
 
 **Extended date ranges:**
-The pipeline is designed to accept additional TLC parquet files without schema changes. Adding 2017+ data requires only updating the date range parameters in the ingest DAGs; BigQuery external tables and dbt models pick up new files automatically.
+The pipeline accepts additional TLC parquet files without schema changes. As of Phase 4 the
+backfill window is parametrized via the `INGEST_START_DATE` / `INGEST_END_DATE` env vars, so
+adding 2017+ data is a config change (no DAG edits); BigQuery external tables and dbt models
+pick up the new files automatically.
 
 ---
 
@@ -283,7 +318,7 @@ The pipeline is designed to accept additional TLC parquet files without schema c
 
 - `terraform/` contains infrastructure definitions but TF state is empty. Run `terraform import` before any `terraform apply` to avoid conflicting with existing GCP resources.
 - The Homebrew `dbt` binary on macOS may resolve to the dbt Cloud CLI. Always use `.venv/bin/dbt` for dbt Core commands.
-- The system `GOOGLE_APPLICATION_CREDENTIALS` environment variable may point to a stale path. `tests/conftest.py` overrides it automatically with `secrets/dtc-de-project-492321-970e67a252d8.json` when that file is present.
+- The system `GOOGLE_APPLICATION_CREDENTIALS` environment variable may point to a stale path. `tests/conftest.py` overrides it automatically with `secrets/gcp-credentials.json` when that file is present.
 - The Airflow Docker image targets Linux (arm64). Do not install macOS-specific binaries into it.
 
 ---
