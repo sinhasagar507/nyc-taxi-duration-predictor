@@ -68,6 +68,10 @@ nyc_taxi_durationprediction/
 │   ├── ny_taxi_analytics/          # dbt project (git submodule)
 │   ├── profiles.yml                # BigQuery profile (env-var keyfile)
 │   └── requirements.txt            # dbt-bigquery==1.11.1
+├── docker/dev/                     # Whole-repo dev container (ML, pytest, dbt, Jupyter)
+│   ├── Dockerfile
+│   ├── docker-compose.yml
+│   └── requirements-dev.txt
 ├── spark/                          # PySpark notebooks and scripts
 │   ├── nyc_taxi_duration_prediction.ipynb
 │   ├── pyspark_bigquery_hybrid.py
@@ -157,7 +161,7 @@ Renamed `05_batch_processing/` to `spark/` to match the target directory layout 
 This README and `CLAUDE.md` reconciled to the final structure and the retired-account
 reality (no live GCP resources or credentials assumed).
 
-### Test suite (131 tests, all passing)
+### Test suite (165 tests on the host, 166 in the dev container)
 
 ```text
 tests/
@@ -169,12 +173,15 @@ tests/
 │   │   ├── test_features.py
 │   │   ├── test_preprocess.py
 │   │   └── test_evaluate.py
-│   └── test_credential_decoupling.py   # guard: old keyfile name never re-hardcoded
+│   ├── test_credential_decoupling.py   # guard: old keyfile name never re-hardcoded
+│   └── test_docker_runtime.py          # guard: build context, dbt pins, Jupyter exposure
 └── integration/
     ├── test_gcs.py                     # bucket reachable, file counts per prefix
     ├── test_bigquery.py                # datasets, external tables, dbt_prod tables
     └── test_dbt.py                     # dbt compile returns exit code 0
 ```
+
+The container runs one extra test — a dbt-isolation check that skips outside the image.
 
 Unit tests require no credentials. Integration tests auto-skip if `GOOGLE_APPLICATION_CREDENTIALS` is not set.
 
@@ -184,10 +191,39 @@ Unit tests require no credentials. Integration tests auto-skip if `GOOGLE_APPLIC
 
 ### Prerequisites
 
-- Docker and Docker Compose
-- Python 3.12+ with a virtual environment
+- Docker and Docker Compose — required for the ML/modeling work and for Airflow
+- Python 3.12+ with a virtual environment — optional convenience path for tests and dbt
 - A GCP service-account key at the stable path `secrets/gcp-credentials.json` (gitignored;
   supply your own if reconnecting to a live project)
+
+### Dev container
+
+The whole-repo development runtime. It carries the ML stack (scikit-learn, XGBoost,
+LightGBM, CatBoost, SHAP, Optuna), PySpark, the pytest suite, the dbt CLI, and JupyterLab.
+These libraries are installed **in the container only**, never in the host venv.
+
+```bash
+# Build (run from the repo root)
+docker compose -f docker/dev/docker-compose.yml build
+
+# Run the test suite
+docker compose -f docker/dev/docker-compose.yml run --rm dev pytest tests/
+
+# One-off script, interactive shell, dbt
+docker compose -f docker/dev/docker-compose.yml run --rm dev \
+  python spark/ml/00_prep_spark.py --limit-files 3
+docker compose -f docker/dev/docker-compose.yml run --rm dev bash
+docker compose -f docker/dev/docker-compose.yml run --rm dev dbt --version
+
+# JupyterLab -> http://127.0.0.1:8888/lab?token=nyc-taxi-dev
+docker compose -f docker/dev/docker-compose.yml up
+```
+
+The repo is bind-mounted at `/workspace`, so host edits are live inside the container and
+outputs written by a container run appear in your working tree. Jupyter is published on
+loopback only; override the token with `JUPYTER_TOKEN=... docker compose ... up`.
+
+Airflow runs its own separate stack — the two are never merged.
 
 ### Start Airflow
 
@@ -214,16 +250,26 @@ Note: use `.venv/bin/dbt` explicitly if the Homebrew `dbt` on your PATH is the d
 
 ### Run the test suite
 
+Always pass the explicit `tests/` path — a bare `pytest` also picks up the legacy
+`airflow/tests/` stubs and fails at collection.
+
 ```bash
 # Unit tests only (no credentials required)
-pytest tests/unit/ -v
+.venv/bin/pytest tests/unit/ -v
 
 # Integration tests (reads credentials automatically from secrets/)
-pytest tests/integration/ -v
+.venv/bin/pytest tests/integration/ -v
 
 # Full suite
-pytest tests/ -v
+.venv/bin/pytest tests/ -v
+
+# Same suite inside the dev container
+docker compose -f docker/dev/docker-compose.yml run --rm dev pytest tests/
 ```
+
+`ModuleNotFoundError: No module named 'xgboost'` on the host is expected — the ML
+libraries are container-only, and the tests that need them skip cleanly outside the
+container.
 
 ---
 

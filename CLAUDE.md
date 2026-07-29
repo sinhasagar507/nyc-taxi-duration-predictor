@@ -53,6 +53,7 @@ nyc_taxi_durationprediction/
 │   ├── profiles.yml         # BigQuery profile (env-var keyfile; dev/ci/prod targets)
 │   └── requirements.txt     # dbt-bigquery==1.11.1 (local + CI + Airflow image)
 ├── .github/workflows/dbt.yml  # CI/CD: dbt compile on PR, dbt build on main
+├── docker/dev/       # whole-repo dev container (ML libs, pytest, dbt CLI, JupyterLab)
 ├── spark/            # batch processing + ML notebooks (was 05_batch_processing/)
 ├── bigquery/         # SQL reference queries
 ├── tests/            # project-wide test suite (see ## Testing below)
@@ -66,20 +67,37 @@ nyc_taxi_durationprediction/
 and `bigquery/queries/*.sql` (legacy homework against the dead `dtc-de-course-440404.nytaxi`
 project — FHV/2023-24/BQML scratch, not part of the current 2015-16 duration pipeline).
 
-## Environments — venv vs Docker
+## Environments — dev container vs Airflow vs host venv
 
-Rule of thumb: **runs unattended on a schedule → Docker; human-in-the-loop → host `.venv`.**
+Three environments with non-overlapping jobs. Two Docker stacks; they are never merged.
 
-- **Host `.venv` (repo root, Python 3.13):** pytest, dbt CLI iteration, PySpark/ML
-  notebooks, ad-hoc scripts. Invoke it explicitly (`.venv/bin/pytest`, `.venv/bin/python`,
-  `.venv/bin/dbt`) — never rely on shell activation, never use system python/pip, and
-  don't create additional venvs. New Python deps for tests/ML/dbt go here (and into the
-  relevant requirements file). This tooling never deploys.
-- **Docker = Airflow only** (`airflow/docker-compose.yaml` + `dockerfile`). Anything a
-  DAG imports at runtime goes in the Airflow image, never on the host. The image builds
-  its own isolated dbt venv at `/opt/dbt-venv` — that is not the host `.venv`.
-- This repo **intentionally overrides the global Docker-first policy** for the
-  test/ML/dbt developer workflows; do not containerize them.
+- **Dev container (`docker/dev/`) — the default for anything that needs a library.**
+  One image for the ML stack (pandas/scikit-learn/XGBoost/LightGBM/CatBoost/SHAP/Optuna,
+  later torch), PySpark batch prep, the pytest suite, the dbt CLI, and JupyterLab. ML
+  libraries are installed **here only — never in the host `.venv`.** Run from the repo root:
+
+  ```bash
+  docker compose -f docker/dev/docker-compose.yml run --rm dev pytest tests/
+  docker compose -f docker/dev/docker-compose.yml run --rm dev bash
+  docker compose -f docker/dev/docker-compose.yml up   # JupyterLab, 127.0.0.1:8888
+  ```
+
+  The repo is bind-mounted at `/workspace` and nothing is copied into the image, so host
+  edits are live in the container. New deps go in `spark/ml/requirements.txt` (libraries)
+  or `docker/dev/requirements-dev.txt` (harness) — never on the host. dbt lives in an
+  isolated `/opt/dbt-venv` inside this image, symlinked to `/usr/local/bin/dbt`.
+- **Airflow (`airflow/docker-compose.yaml` + `dockerfile`) — a separate stack, untouched
+  by the above.** Anything a DAG imports at runtime goes in the Airflow image, never on
+  the host. It builds its own isolated `/opt/dbt-venv`. Do not merge the two stacks or
+  share images between them.
+- **Host `.venv` (repo root, Python 3.13) — still present, no longer the default.** Fast
+  path for `.venv/bin/pytest tests/`, `.venv/bin/dbt`, and ad-hoc GCP client scripts.
+  Invoke it explicitly — never rely on shell activation, never use system python/pip,
+  don't create additional venvs. It deliberately lacks xgboost/lightgbm/catboost; tests
+  needing them use `pytest.importorskip` and skip cleanly here.
+- **Superseded 2026-07-28:** the earlier Airflow-only Docker rule, which kept the
+  test/ML/dbt developer workflows on the host. Development now follows the Docker-first
+  policy; the host venv remains a convenience path, not the source of truth.
 
 ### Deployment split (target: GCP, single GCE VM running the compose stack)
 
@@ -96,8 +114,21 @@ Rule of thumb: **runs unattended on a schedule → Docker; human-in-the-loop →
 ## Testing
 
 Each development phase must pass its verification gate before the next phase begins.
-Run `pytest tests/` from the repo root. Unit tests run without credentials; integration
-tests auto-skip if credentials are unavailable.
+Run `pytest tests/` from the repo root — **always with the explicit `tests/` path.**
+A bare `pytest` also collects the legacy `airflow/tests/` stubs and dies with import
+errors (`pytest.ini` declares its options under `[tool:pytest]`, the setup.cfg section
+name, which pytest ignores in a `pytest.ini`, so `testpaths` never takes effect).
+
+Unit tests run without credentials; integration tests auto-skip if credentials are
+unavailable. Either environment works:
+
+```bash
+.venv/bin/pytest tests/                                                  # host
+docker compose -f docker/dev/docker-compose.yml run --rm dev pytest tests/   # container
+```
+
+ML tests that need xgboost/lightgbm/catboost skip on the host (container-only libs)
+and run in the container.
 
 ### Tiers
 
