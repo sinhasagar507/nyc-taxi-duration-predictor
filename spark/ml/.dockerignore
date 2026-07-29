@@ -1,6 +1,0 @@
-# Only requirements.txt is needed at build time; everything else is bind-mounted at runtime.
-data/
-notebooks/
-*.md
-__pycache__/
-*.pyc

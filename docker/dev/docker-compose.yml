@@ -1,0 +1,36 @@
+# Whole-repo development runtime. Dev-only; nothing here is deployed.
+# Airflow's stack (airflow/docker-compose.yaml) is SEPARATE — never merge them.
+#
+# Usage (always from the repo root):
+#   docker compose -f docker/dev/docker-compose.yml build
+#   docker compose -f docker/dev/docker-compose.yml run --rm dev pytest tests/
+#   docker compose -f docker/dev/docker-compose.yml run --rm dev dbt --version
+#   docker compose -f docker/dev/docker-compose.yml run --rm dev \
+#       python spark/ml/00_prep_spark.py --limit-files 3
+#   docker compose -f docker/dev/docker-compose.yml run --rm dev bash
+#   docker compose -f docker/dev/docker-compose.yml up   # JupyterLab
+#     -> http://127.0.0.1:8888/lab?token=nyc-taxi-dev
+services:
+  dev:
+    build:
+      context: ../..                  # repo root: the build needs 3 requirements files
+      dockerfile: docker/dev/Dockerfile
+    image: nyc-taxi-dev:latest
+    working_dir: /workspace
+    volumes:
+      - ../..:/workspace              # repo root -> /workspace (source, data, outputs)
+    environment:
+      PYTHONPATH: /workspace
+      SPARK_LOCAL_DIRS: /tmp/spark    # keep Spark shuffle spill inside the container
+      JUPYTER_TOKEN: ${JUPYTER_TOKEN:-nyc-taxi-dev}
+    ports:
+      - "127.0.0.1:8888:8888"         # loopback only — never exposed to the LAN
+    shm_size: "2gb"                   # headroom for Spark local shuffle
+    # `up` -> JupyterLab; `run --rm dev <cmd>` -> one-off scripts and pytest.
+    # --ip=0.0.0.0 is required INSIDE the container; the host-side loopback bind
+    # above is what restricts access. Auth is JUPYTER_TOKEN (never an empty token).
+    # --allow-root is safe here: on macOS (virtiofs) bind-mounted files written by
+    # container-root are owned by the host user. On Linux, add `user: "${UID}:${GID}"`.
+    command: >
+      jupyter lab --ip=0.0.0.0 --port=8888 --no-browser --allow-root
+      --ServerApp.root_dir=/workspace

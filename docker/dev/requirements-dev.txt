@@ -1,0 +1,13 @@
+# Dev-harness dependencies for the whole-repo container (docker/dev/Dockerfile).
+# Tooling only: importable ML/Spark libraries belong in spark/ml/requirements.txt,
+# and the dbt CLI lives in its own /opt/dbt-venv (dbt/requirements.txt).
+jupyterlab>=4.2,<5
+pytest==8.4.1
+pyyaml==6.0.2
+
+# Imported at MODULE scope by tests/integration/test_bigquery.py and test_gcs.py.
+# conftest's credential skip runs after import, so without these `pytest tests/`
+# errors at collection inside the container instead of skipping cleanly.
+# Versions match the host .venv so host and container runs agree.
+google-cloud-bigquery==3.36.0
+google-cloud-storage==2.19.0
