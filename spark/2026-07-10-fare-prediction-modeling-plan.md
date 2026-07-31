@@ -96,6 +96,55 @@ All models wrapped in `Pipeline(preprocessor, model)`, all scored through the Ph
 
 ---
 
+## 5b. Phase 4b — Spark MLlib baseline (D3, adopted 2026-07-30)
+
+One Spark-native model trained on `sample_full.parquet` (12.75M rows) — the DE-portfolio
+counterpart to the sklearn sweep. Runs **after** Phase 4 so there is a locked champion to
+compare against.
+
+**Model:** `pyspark.ml.regression.GBTRegressor` — the strongest thing MLlib offers, so the
+head-to-head is meaningful rather than a strawman. (`LinearRegression` is a one-line
+addition if a linear floor is wanted too; not required.)
+
+**Script:** `spark/ml/01_mllib_baseline.py`, following the `00_prep_spark.py` convention —
+a parameterizable Spark script, not a notebook. Pure helpers (column-group builders, the
+metrics→leaderboard-row adapter) go in `src/` and are **unit-tested per TDD**; the fit
+itself is a script run, like Phase 1.
+
+**Pipeline stages** (`pyspark.ml.Pipeline`):
+1. `StringIndexer` + `OneHotEncoder` on `service_type`, `pickup_borough`, `dropoff_borough`
+2. numerics passed through raw — GBT is a tree, no scaling needed
+3. `VectorAssembler` → single `features` vector
+4. `GBTRegressor(labelCol="fare_capped", seed=42)`
+
+**`od_corridor` is dropped for this baseline.** MLlib has no `TargetEncoder` and 19,953
+one-hot columns is not viable — this is the Tier-2 gap from §10 showing up in practice, and
+naming it is part of the finding, not a defect to paper over.
+
+**Fair comparison (the part that matters):** an MLlib model minus the corridor feature
+versus a sklearn model with it is not a like-for-like result. So report **three** rows:
+
+| Row | Stack | Rows | `od_corridor` |
+|---|---|---|---|
+| Phase-4 champion | sklearn | `sample_full` | ✅ target-encoded |
+| Champion, corridor dropped | sklearn | `sample_full` | ❌ |
+| MLlib GBT | Spark | `sample_full` | ❌ |
+
+Row 2 vs row 3 is the honest stack comparison; row 1 vs row 2 quantifies what the
+target-encoded corridor is actually worth. Both are worth reporting.
+
+**Metrics + folds:** `RegressionEvaluator` for mae/rmse/r2 — the same three metrics — with
+k-fold at `seed=42` matching `make_cv()`. Results adapt into the existing `leaderboard()`
+as ordinary rows, so everything still lands in one table.
+
+**Expected outcome, stated up front:** the MLlib GBT lands close to but behind the sklearn
+boosting champion, mostly from the missing corridor feature and MLlib's weaker GBT
+implementation — and it takes materially longer per fit at 12.75M rows than sklearn does at
+765K. Confirming *that* is the point: it demonstrates the tool at the scale where it earns
+its keep, and documents why the sweep itself doesn't live there.
+
+---
+
 ## 6. Phase 5 — Tune + diagnose
 
 - Hyperparameter search (`RandomizedSearchCV` / Optuna) on top 2–3 only
@@ -137,8 +186,82 @@ Currently 92% full / ~36 GB free. Reclaim ~10 GB of dead FHVHV homework (untrack
 
 ---
 
+## 10. Spark vs scikit-learn — scope decision (2026-07-30)
+
+Revisited after Phases 1–3 landed: *how much of this pipeline should be PySpark?* Audit of
+what exists today — only `00_prep_spark.py` imports `pyspark`; `features.py` is pandas,
+`preprocess.py` and `evaluate.py` are sklearn.
+
+### The three tiers
+
+**Tier 1 — converts cleanly, 1:1.** Every function in `features.py` is a column expression
+with no cross-row state:
+
+| pandas | PySpark |
+|---|---|
+| `pd.to_numeric(...).astype(float64)` | `F.col(c).cast("double")` |
+| `np.sin(2π·hour/24)` | `F.sin(2*pi*F.col("pickup_hour")/24)` |
+| `.map({band: i})` | `F.when(...).otherwise(...)` chain |
+| `pickup_zone + "→" + dropoff_zone` | `F.concat_ws("→", ...)` |
+| `.drop(columns=[...])` | `.drop(*cols)` |
+
+`cast_decimal_columns` becomes unnecessary in Spark — Decimal-as-object is a *pandas*
+artifact of reading `decimal(38,9)`; Spark reads it as native `DecimalType`.
+
+**Tier 2 — converts with real rework.** `StandardScaler`/`OneHotEncoder` exist in
+`pyspark.ml.feature`, but the shape changes: `ColumnTransformer` → `VectorAssembler` + a
+stage chain, and OHE becomes two stages (`StringIndexer` → `OneHotEncoder`).
+**The blocker is `TargetEncoder` — Spark ML has no equivalent.** Cross-fitting 19,953 OD
+corridors by hand (fold ids → group means over each fold's complement → join back with
+smoothing) is the one place a bug is *silent leakage* that inflates R² unnoticed. In
+`evaluate.py`, metrics map to `RegressionEvaluator`, but `cross_validate`'s per-fold score
+arrays and `fit_time` need hand-rolling, and the identical-folds-for-every-model guarantee
+(the entire point of Phase 3) gets **harder** to enforce, not easier.
+
+**Tier 3 — doesn't convert.** MLlib coverage against the §5 sweep: ✅ LinearRegression
+(`elasticNetParam` covers OLS/Ridge/Lasso/ElasticNet), DecisionTree, RandomForest;
+⚠️ `GBTRegressor` (weaker than sklearn GB), XGBoost via `xgboost.spark`, LightGBM via
+SynapseML (heavy JVM dep), CatBoost (fragile Spark package); ❌ **ExtraTrees,
+BaggingRegressor, StackingRegressor** — roughly a third of the sweep lost or hand-built.
+
+### The cost nobody mentions
+
+`sample_work.parquet` is 765K rows. On a single laptop, Spark on 765K rows is **slower**
+than pandas — JVM startup, serialization and shuffle are pure overhead with no cluster to
+amortize against. And the 110 unit tests currently run in milliseconds because they are
+pure functions over small frames; every one would need a `SparkSession` fixture and go to
+seconds. The TDD loop that carried Phases 1–3 gets materially worse.
+
+### Decisions
+
+- **D1 — ADOPTED: move feature engineering into the Spark prep.** Port the `features.py`
+  column logic into `00_prep_spark.py` so it runs on all 128.78M rows **before** sampling,
+  not on the sample after. This is the one conversion that plays to Spark's strength: the
+  samples then carry engineered features, and training on far more than 765K rows stays
+  open. Phase 2's split/encoding discipline is unaffected — only the deterministic column
+  math moves upstream.
+- **D2 — ADOPTED: `preprocess.py`, `evaluate.py` and the Phase-4 sweep stay scikit-learn.**
+  Not because Spark can't, but because at 765K rows it is slower, it costs `TargetEncoder`
+  and a third of the model families, and it buys nothing demonstrable. §0's "Spark ends
+  before modeling starts" stands.
+- **D3 — ADOPTED (2026-07-30): one MLlib baseline on `sample_full`.** A single Spark-native
+  model alongside the sklearn sweep — the skill demonstrated at a data size where Spark is
+  genuinely the right tool, without rewriting three working modules. Specified as **Phase 4b**
+  in §5b below.
+
+**Naming note:** `spark/` is the batch-processing + ML home (inherited from Phase 3's
+rename of `05_batch_processing/`), not a claim that everything inside is Spark. Renaming
+now would churn Docker mounts and import paths for cosmetics — not worth it.
+
+---
+
 ## Status
 - [x] Plan reviewed by Sagar
+- [x] **Spark-vs-sklearn scope decision — §10, 2026-07-30.** D1 adopted (feature
+      engineering moves into the Spark prep, pre-sample), D2 adopted (preprocessing, CV
+      harness and sweep stay sklearn), **D3 adopted** — single MLlib GBT baseline on
+      `sample_full`, specified as Phase 4b in §5b. Supersedes nothing in §0–§9 except the
+      placement of `features.py` logic; no phase is invalidated.
 - [~] Phase 0: Spark verified (4.1.2 on Py3.13/Java21) + FHVHV disk cleanup **pending user `rm`**; `spark/data/` (2.4G redundant) pending user OK
 - [x] **Phase 1: prep script + samples — DONE 2026-07-10.** `spark/ml/00_prep_spark.py` →
       `sample_full.parquet` (12,748,027 rows) + `sample_work.parquet` (765,761) + `prep_stats.json`.
@@ -166,5 +289,6 @@ Currently 92% full / ~36 GB free. Reclaim ~10 GB of dead FHVHV homework (untrack
       matches plan §5 prediction (tree > linear ≫ mean). High R² expected with
       duration in (metered fare ≈ f(distance, time)) → ablation will quantify it.
 - [ ] Phase 4: model sweep
+- [ ] Phase 4b: Spark MLlib GBT baseline on `sample_full` (§5b)
 - [ ] Phase 5: tune + diagnose
 - [ ] Phase 6: neural nets
