@@ -2,6 +2,40 @@
 
 Guidance for AI agents (and humans) working in this repository.
 
+## Working Agreement — one step at a time, reviewed before the next
+
+**Stop after every step and wait for the repository owner to review it.** A "step" is one
+reviewable unit of work: one file written or edited, one script run, one commit, one
+analysis. Not a whole phase, not a batch of related edits.
+
+After each step, report what changed and what the next step would be — then **stop and
+end the turn.** Do not chain the next step onto the same turn, and do not treat silence,
+a general goal, or an approved plan as approval for the step after the current one.
+Approval is per step and is not durable: "yes, do that" applies to the step just proposed,
+never to the rest of the sequence.
+
+This is deliberate friction. The owner is learning this stack and reviews each output as
+it lands; work that runs ahead has to be unpicked, which costs more than it saves. It
+applies even when the remaining steps look obvious or mechanical.
+
+Read-only investigation — searching, reading files, `git status`, running the test suite —
+does not need a gate. Gate anything that **writes, commits, pushes, deletes, or spends
+real time**.
+
+### Show the changes every turn
+
+**Any turn that changed a file ends by showing what changed, for review.** Not a summary
+of the intent — the actual diff. Run `git diff` (add `--staged` if anything is staged, and
+show new files explicitly since an untracked file has no diff) and put the result in the
+reply, alongside a one-line note per file saying why it changed.
+
+Small diffs go inline in full. For a large diff, lead with `git diff --stat`, show the
+substantive hunks, and say plainly which files were summarized rather than shown. Never
+report a file as changed without showing it, and never let a change ride along unmentioned
+because it was incidental to the main edit.
+
+If a turn changed nothing, say so — silence is not the same as "no changes".
+
 ## Project: NYC Taxi Duration Prediction
 
 End-to-end data engineering pipeline (DataTalksClub DE Zoomcamp) that predicts NYC
@@ -208,7 +242,23 @@ Each phase ends with a test-suite verification gate and its own commit. Do not m
   ingest window via `INGEST_START_DATE` / `INGEST_END_DATE`. *Verified:* `pytest tests/` green.
 
 - **⏳ Phase 5 — Document (in progress).** Reconcile this file + README to the final
-  structure and retired-account reality. Open PR.
+  structure and retired-account reality. *Done:* docs reconciled; branch
+  `refactor/wire-pipeline` pushed to origin.
+
+## Deferred — do not action without an explicit ask
+
+These are parked on purpose. Do not treat them as the next step, do not raise them as
+blockers, and do not start them opportunistically while doing adjacent work.
+
+- **Open the PR into `main`.** The repository owner opens it themselves, on their own
+  timing. Nothing in the development plan gates on it — Phase 4 of the fare model and all
+  other work proceed on `refactor/wire-pipeline` regardless. Compare link when the owner
+  wants it: `https://github.com/sinhasagar507/taxi-fare-prediction/compare/main...refactor/wire-pipeline`
+- **Move `project_architecture/` → `notes/`.** Listed under "Artifacts to retire" above;
+  still at the repo top level. Deferred, not forgotten.
+- **Fix the `pytest.ini` section header** (`[tool:pytest]` → `[pytest]`). Deliberately
+  held back as its own change so that `testpaths`, `--strict-markers`, and
+  `filterwarnings` taking effect for the first time is not tangled into unrelated work.
 
 ## Commit Conventions
 
