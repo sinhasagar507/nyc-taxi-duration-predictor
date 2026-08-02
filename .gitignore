@@ -224,6 +224,12 @@ dbt_packages/
 **/.user.yml
 migration_backup/
 
+# === Model sweep outputs — regenerated on every run, ignored by default ===
+# Smoke/work boards are throwaway. Pin a *validated* board deliberately with
+# `git add -f spark/ml/results/leaderboard_<tag>.csv` (take its sweep_<tag>.json
+# too — rows/folds/models/env/wall-time are what keep the board interpretable).
+spark/ml/results/
+
 # === Local scratch artifacts (not repo content) ===
 project-status-phase5.pdf
 spark/head.csv
