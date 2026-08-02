@@ -15,9 +15,15 @@ from sklearn.metrics import (
     r2_score,
     root_mean_squared_error,
 )
-from sklearn.model_selection import KFold, cross_validate
+from sklearn.model_selection import KFold, cross_validate, train_test_split
 
 RANDOM_STATE = 42
+
+# Columns the prep stratified its sample on (service_type x temp_band); after
+# build_features the band arrives as its ordinal, which is a 1:1 recode.
+STRATIFY_COLUMNS = ("service_type", "temp_band_ord")
+
+HOLDOUT_FRACTION = 0.2
 
 # Metric functions — single source for both the CV scorers and any ad-hoc
 # reporting (Phase-5 slice metrics reuse these).
@@ -38,6 +44,49 @@ def compute_metrics(y_true, y_pred) -> dict:
 def make_cv(n_splits: int = 5) -> KFold:
     """The one fold set every model is scored on (shuffled, fixed seed)."""
     return KFold(n_splits=n_splits, shuffle=True, random_state=RANDOM_STATE)
+
+
+def make_holdout(
+    X,
+    y,
+    test_size: float = HOLDOUT_FRACTION,
+    stratify_columns=STRATIFY_COLUMNS,
+    random_state: int = RANDOM_STATE,
+):
+    """Carve the sealed test set off the front of the workflow (plan §4a).
+
+    Returns (X_train, X_test, y_train, y_test). Everything downstream — the
+    sweep, CV, hyperparameter search — sees `X_train` only. The test split is
+    scored exactly once, in Phase 5, after the champion is chosen on CV
+    evidence alone; scoring it repeatedly while tuning silently turns it into
+    a validation set and the final number stops being an honest estimate.
+
+    Stratified on `service_type` x `temp_band_ord`, the same key
+    00_prep_spark.py sampled with, so the split cannot skew a small stratum
+    (Green/Freezing is only ~1.5% of the work sample). Columns that aren't
+    present are skipped; with none present the split is plain random, so the
+    duration ablation and reduced smoke frames still work.
+
+    Deterministic under `random_state`: the same sample file and seed always
+    reproduce the same holdout, which is what keeps it stable across runs
+    without persisting a second copy of the data.
+    """
+    present = [c for c in stratify_columns if c in X.columns]
+    strata = None
+    if present:
+        strata = X[present[0]].astype(str)
+        for col in present[1:]:
+            strata = strata + "|" + X[col].astype(str)
+
+    X_train, X_test, y_train, y_test = train_test_split(
+        X,
+        y,
+        test_size=test_size,
+        random_state=random_state,
+        shuffle=True,
+        stratify=strata,
+    )
+    return X_train, X_test, y_train, y_test
 
 
 _SCORING = {

@@ -79,6 +79,58 @@ One `evaluate(model, X, y, cv)` that every model plugs into: **identical KFold f
 
 ---
 
+## 4a. Data splitting policy (decided 2026-08-01)
+
+**Supersedes the 70/15/15 split named in §3.** That was written before the CV harness
+existed; a fixed validation slice is strictly worse than the 5-fold CV we now have, which
+validates against all 612K training rows instead of 115K and exposes fold-to-fold spread.
+
+**Adopted — stratified 80/20 holdout + 5-fold CV inside the 80%:**
+
+- `evaluate.make_holdout(X, y, test_size=0.2)` carves the split **before** the sweep sees
+  the data. On `sample_work`: 612,609 train / 153,152 sealed test.
+- Stratified on `service_type` × `temp_band_ord` — the same key `00_prep_spark.py`
+  sampled with, so the smallest stratum (Green/Freezing, ~1.5%) can't skew.
+- Deterministic under `RANDOM_STATE=42`; the sealed rows are re-derivable from the
+  sample file + seed + fraction (recorded in `results/sweep_<tag>.json`), so no second
+  copy of the data is persisted.
+- `01_run_sweep.py` seals it by default and **never scores or prints it**. `--no-holdout`
+  exists for wiring smoke runs only.
+
+**Holdout discipline — the part no code enforces.** The test split is scored **exactly
+once**, in Phase 5, after the champion is chosen on CV evidence alone. Every decision
+informed by a test score makes the final number optimistic: with 15 models separated by
+~$0.005 MAE and SE ≈ $0.002, picking the winner *on the holdout* would bias it by roughly
+the largest of 15 noise draws (~$0.005) — the same size as the real gap between the top
+two models. Tune, ablate and compare freely on CV; touch the holdout at the end.
+
+### Deferred — temporal test set (next time the prep runs)
+
+The 80/20 above is a **random** split, but the deployment case is predicting a fare for a
+trip happening *now* from a model trained on *past* trips. A random split lets 2016-06
+inform a 2016-03 prediction, which is optimistic relative to reality by an unmeasured
+amount. Rate cards didn't change across 2015–16 and a metered fare is close to
+deterministic in distance and time, so drift is *probably* small — "probably" being
+exactly what a temporal holdout would replace with a number.
+
+**Blocked on data, not effort:** `select_model_columns` (`00_prep_spark.py`) consumes
+`pickup_datetime` into `pickup_hour` / `pickup_dow` and drops it, so the samples carry no
+date to split on.
+
+When the prep is next re-run:
+
+1. Add `pickup_datetime` (or just a `pickup_month` key) to the `keep` list.
+2. Carve a second test set: the **last 2 of 24 months (2016-11, 2016-12, ≈8%)**.
+3. Score the Phase-5 champion on **both** test sets and report the pair.
+   - **Agreement** → the random split was safe, and you can say so with evidence rather
+     than assertion.
+   - **Divergence** → real temporal drift, quantified.
+
+Either outcome is a reportable result. This is additive — it does not replace the random
+holdout, and doing the random holdout now costs nothing against it.
+
+---
+
 ## 5. Phase 4 — The model sweep
 
 All models wrapped in `Pipeline(preprocessor, model)`, all scored through the Phase-3 harness, run on `sample_work` for speed:
@@ -288,7 +340,26 @@ now would churn Docker mounts and import paths for cosmetics — not worth it.
       tree_d8 MAE $0.51 / R² .981 · ridge $0.84 / .937 · dummy $6.73 / 0 —
       matches plan §5 prediction (tree > linear ≫ mean). High R² expected with
       duration in (metered fare ≈ f(distance, time)) → ablation will quantify it.
-- [ ] Phase 4: model sweep
+- [~] Phase 4: model sweep — registry + runner built; **first work-sized sweep INVALID**,
+      superseded by the 2026-08-01 feature fix below. Re-run pending.
+- [x] **Feature-set + split correction — 2026-08-01 (TDD).** The 2026-07-31 work sweep
+      returned R² −1,192,374 for `ols`/`ridge` (and −36K / −132K for `elasticnet` /
+      `voting`). Root cause: `sample_work` row 533491 carries a corrupt
+      **8,003,318-mile** odometer reading ($15.50 fare, 22 min). `features.py` had
+      excluded `distance_capped` as a "duplicate" and kept the uncapped
+      `trip_distance`, disabling the §2 p99 cap built to neutralise exactly this. With
+      KFold(seed=42) the row lands in **fold 0's test split**, so the scaler was fit
+      without it (σ=3.59 vs 10,222) and the row transformed to 2,228,170 → a **$9.29M
+      prediction**; that single row was 100.00% of fold 0's squared error. Trees were
+      immune (split-based), which is why the leaderboard top looked healthy.
+      **Fixed:** only the derived half of each raw/derived pair now trains —
+      `distance_capped` replaces `trip_distance`, `temp_band_ord` replaces
+      `temperature`. X: 16 → **15 features**, matrix 27 → **26 columns**, scaled
+      `max|x|` 2,228,170 → **52**. Smoke: `ols`/`ridge` R² **0.969**.
+      **Added:** §4a split policy — `evaluate.make_holdout` + `--holdout-frac` /
+      `--no-holdout`. 208 unit tests green.
+      **Known, untouched:** design matrix is rank 25/27 (full one-hot + intercept =
+      dummy trap, cond ≈ 4e15); coefficients unstable across folds. Separate defect.
 - [ ] Phase 4b: Spark MLlib GBT baseline on `sample_full` (§5b)
-- [ ] Phase 5: tune + diagnose
+- [ ] Phase 5: tune + diagnose — scores the sealed holdout **once**, at the end (§4a)
 - [ ] Phase 6: neural nets

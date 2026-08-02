@@ -139,12 +139,12 @@ class TestEvaluate:
         n = 60
         X = pd.DataFrame(
             {
-                "trip_distance": rng.uniform(0.5, 18.0, n),
+                "distance_capped": rng.uniform(0.5, 18.0, n),
                 "service_type": rng.choice(["Yellow", "Green"], n),
                 "od_corridor": rng.choice(["A→B", "B→C", "C→D"], n),
             }
         )
-        y = pd.Series(4.0 * X["trip_distance"] + rng.normal(0, 0.5, n))
+        y = pd.Series(4.0 * X["distance_capped"] + rng.normal(0, 0.5, n))
         pipe = Pipeline(
             [
                 ("pre", build_preprocessor("scaled", X.columns)),
@@ -178,3 +178,84 @@ class TestLeaderboard:
         board = ev.leaderboard([])
         assert isinstance(board, pd.DataFrame)
         assert board.empty
+
+
+# ---------------------------------------------------------------------------
+# make_holdout — the sealed test set (plan §4a)
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def strata_frame():
+    """Shaped like build_features() output: carries the two columns the prep
+    stratified its sample on (service_type x temp_band_ord), with deliberately
+    uneven strata so a proportional split is actually testable."""
+    rng = np.random.default_rng(42)
+    n = 2000
+    service = np.where(rng.random(n) < 0.75, "Yellow", "Green")
+    band = rng.choice([0, 1, 2, 3, 4], n, p=[0.05, 0.2, 0.35, 0.3, 0.1])
+    X = pd.DataFrame(
+        {
+            "distance_capped": rng.uniform(0.5, 18.0, n),
+            "service_type": service,
+            "temp_band_ord": band,
+        }
+    )
+    y = pd.Series(4.0 * X["distance_capped"] + rng.normal(0, 0.5, n), name="fare_capped")
+    return X, y
+
+
+class TestMakeHoldout:
+    def test_default_split_is_eighty_twenty(self, strata_frame):
+        X, y = strata_frame
+        X_tr, X_te, y_tr, y_te = ev.make_holdout(X, y)
+        assert len(X_te) == pytest.approx(0.2 * len(X), abs=1)
+        assert len(X_tr) + len(X_te) == len(X)
+        assert len(y_tr) == len(X_tr) and len(y_te) == len(X_te)
+
+    def test_train_and_test_rows_are_disjoint(self, strata_frame):
+        X, y = strata_frame
+        X_tr, X_te, _, _ = ev.make_holdout(X, y)
+        assert not set(X_tr.index) & set(X_te.index), "row appears in both splits"
+
+    def test_features_and_target_stay_aligned(self, strata_frame):
+        X, y = strata_frame
+        X_tr, X_te, y_tr, y_te = ev.make_holdout(X, y)
+        assert (X_tr.index == y_tr.index).all()
+        assert (X_te.index == y_te.index).all()
+
+    def test_same_seed_gives_identical_split(self, strata_frame):
+        X, y = strata_frame
+        first = ev.make_holdout(X, y)[1].index.tolist()
+        second = ev.make_holdout(X, y)[1].index.tolist()
+        assert first == second, "holdout must be reproducible across calls"
+
+    def test_different_seed_gives_different_split(self, strata_frame):
+        X, y = strata_frame
+        a = ev.make_holdout(X, y, random_state=1)[1].index.tolist()
+        b = ev.make_holdout(X, y, random_state=2)[1].index.tolist()
+        assert a != b
+
+    def test_strata_proportions_are_preserved(self, strata_frame):
+        X, y = strata_frame
+        X_tr, X_te, _, _ = ev.make_holdout(X, y)
+        key = lambda d: (d["service_type"] + "|" + d["temp_band_ord"].astype(str))
+        full = key(X).value_counts(normalize=True)
+        for part in (X_tr, X_te):
+            got = key(part).value_counts(normalize=True)
+            for stratum, share in full.items():
+                assert got[stratum] == pytest.approx(share, abs=0.01), (
+                    f"stratum {stratum} drifted"
+                )
+
+    def test_custom_test_size_is_honoured(self, strata_frame):
+        X, y = strata_frame
+        _, X_te, _, _ = ev.make_holdout(X, y, test_size=0.1)
+        assert len(X_te) == pytest.approx(0.1 * len(X), abs=1)
+
+    def test_missing_strata_columns_fall_back_to_unstratified(self):
+        """The duration ablation and smoke frames may not carry both keys;
+        a missing key must degrade to a plain random split, not crash."""
+        X = pd.DataFrame({"distance_capped": np.arange(100, dtype=float)})
+        y = pd.Series(np.arange(100, dtype=float), name="fare_capped")
+        X_tr, X_te, _, _ = ev.make_holdout(X, y)
+        assert len(X_te) == 20 and len(X_tr) == 80
