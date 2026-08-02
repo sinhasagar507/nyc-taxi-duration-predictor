@@ -180,6 +180,45 @@ class TestNumericHandling:
 # Categorical handling — OHE safety, target-encoded corridor
 # ---------------------------------------------------------------------------
 
+class TestDummyTrap:
+    """Full one-hot on every categorical makes each block's columns sum to 1,
+    so the blocks are linearly dependent on each other. Measured on the real
+    sample: rank 25 of 27, cond ~4e15, and the pickup_borough_EWR coefficient
+    swinging 8.2 -> 27.1 across CV folds. Predictions survive it (lstsq takes
+    the minimum-norm solution) but no coefficient means anything.
+
+    Fixed on the scaled variant only — trees are indifferent to collinearity
+    and splitting on a dropped reference level is strictly harder.
+    """
+
+    @staticmethod
+    def _n_ohe(pre):
+        return sum(n.startswith("ohe__") for n in pre.get_feature_names_out())
+
+    def test_scaled_variant_drops_one_level_per_categorical(self, Xy):
+        X, y = Xy
+        pre = preprocess.build_preprocessor("scaled", X.columns)
+        pre.fit(X, y)
+        levels = sum(X[c].nunique() for c in preprocess.OHE_COLUMNS)
+        assert self._n_ohe(pre) == levels - len(preprocess.OHE_COLUMNS)
+
+    def test_tree_variant_keeps_every_level(self, Xy):
+        X, y = Xy
+        pre = preprocess.build_preprocessor("tree", X.columns)
+        pre.fit(X, y)
+        levels = sum(X[c].nunique() for c in preprocess.OHE_COLUMNS)
+        assert self._n_ohe(pre) == levels
+
+    def test_scaled_design_matrix_is_full_rank(self, Xy):
+        X, y = Xy
+        out = preprocess.build_preprocessor("scaled", X.columns).fit_transform(X, y)
+        rank = np.linalg.matrix_rank(out)
+        assert rank == out.shape[1], (
+            f"rank {rank} of {out.shape[1]} columns — design matrix is still "
+            f"rank-deficient"
+        )
+
+
 class TestCategoricalHandling:
     @pytest.mark.parametrize("variant", ["scaled", "tree"])
     def test_unseen_categories_at_transform_do_not_raise(self, Xy, variant):

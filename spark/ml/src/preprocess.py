@@ -68,7 +68,26 @@ def build_preprocessor(variant: str, feature_columns) -> ColumnTransformer:
             ("bin", "passthrough", binary),
             (
                 "ohe",
-                OneHotEncoder(handle_unknown="ignore", sparse_output=False),
+                OneHotEncoder(
+                    # Drop a reference level per categorical on the scaled
+                    # variant only. Full one-hot makes each block sum to 1, so
+                    # the blocks are mutually dependent and the design matrix
+                    # is rank-deficient (measured: rank 25/27, cond ~4e15).
+                    # Predictions survive — lstsq takes the minimum-norm
+                    # solution — but coefficients don't: pickup_borough_EWR
+                    # swung 8.2 -> 27.1 across CV folds. Trees keep every
+                    # level; they are indifferent to collinearity and would
+                    # only find the dropped level harder to split on.
+                    #
+                    # Caveat of pairing drop with handle_unknown="ignore": an
+                    # unseen category encodes to all-zeros, which is exactly
+                    # the reference level's encoding. Unknown and reference
+                    # become indistinguishable. Accepted — boroughs and
+                    # service_type are closed sets from the zone lookup.
+                    drop="first" if variant == "scaled" else None,
+                    handle_unknown="ignore",
+                    sparse_output=False,
+                ),
                 ohe,
             ),
             (
