@@ -32,10 +32,9 @@ def Xy():
     corridor_effect = {"A→B": 8.0, "B→C": 14.0, "C→D": 22.0, "D→A": 35.0}
     X = pd.DataFrame(
         {
-            "trip_distance": rng.uniform(0.5, 18.0, N_ROWS),
+            "distance_capped": rng.uniform(0.5, 18.0, N_ROWS),
             "trip_duration_min": rng.uniform(2.0, 55.0, N_ROWS),
             "passenger_count": rng.integers(1, 6, N_ROWS).astype("int32"),
-            "temperature": rng.uniform(10.0, 95.0, N_ROWS),
             "pickup_dow": rng.integers(0, 7, N_ROWS).astype("int32"),
             "service_type": rng.choice(["Yellow", "Green"], N_ROWS),
             "pickup_borough": rng.choice(["Manhattan", "Queens", "Brooklyn"], N_ROWS),
@@ -117,6 +116,36 @@ class TestOutputContract:
 # ---------------------------------------------------------------------------
 # Scaled vs tree numeric handling
 # ---------------------------------------------------------------------------
+
+class TestSupersededColumnsNeverReachTheModel:
+    """Only the transformed half of each raw/derived pair is a model input.
+
+    features.build_features() already excludes the raw halves, so these are
+    defence in depth: if a stray raw column ever reaches the preprocessor it
+    must be dropped, not silently scaled alongside its own transform.
+    """
+
+    def test_capped_distance_is_the_numeric_distance_column(self):
+        assert "distance_capped" in preprocess.NUMERIC_COLUMNS
+        assert "trip_distance" not in preprocess.NUMERIC_COLUMNS
+
+    def test_temperature_is_not_a_numeric_column(self):
+        """temp_band_ord supersedes it."""
+        assert "temperature" not in preprocess.NUMERIC_COLUMNS
+        assert "temp_band_ord" in preprocess.NUMERIC_COLUMNS
+
+    @pytest.mark.parametrize("variant", ["scaled", "tree"])
+    @pytest.mark.parametrize("stray", ["trip_distance", "temperature"])
+    def test_stray_raw_column_is_dropped(self, Xy, variant, stray):
+        X, y = Xy
+        X = X.assign(**{stray: 1e9})
+        pre = preprocess.build_preprocessor(variant, X.columns)
+        out = pre.fit_transform(X, y)
+        assert not any(
+            name.endswith(f"__{stray}") for name in pre.get_feature_names_out()
+        ), f"{stray} reached the model"
+        assert np.abs(out).max() < 1e6, f"{stray} leaked its magnitude into the matrix"
+
 
 class TestNumericHandling:
     def test_scaled_variant_standardizes_numerics(self, Xy):

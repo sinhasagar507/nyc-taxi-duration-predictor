@@ -21,11 +21,13 @@ from sklearn.preprocessing import OneHotEncoder, StandardScaler, TargetEncoder
 
 # Column groups (intersected with whatever columns the caller actually has,
 # so the trip_duration_min ablation just works).
+# Only the derived half of each raw/derived pair appears here: distance_capped
+# (not trip_distance) and temp_band_ord (not temperature). features.py already
+# drops the raw halves; remainder="drop" below is the second line of defence.
 NUMERIC_COLUMNS = [
-    "trip_distance",
+    "distance_capped",
     "trip_duration_min",
     "passenger_count",
-    "temperature",
     "pickup_dow",
     "humidity",
     "windSpeed",

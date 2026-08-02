@@ -27,7 +27,11 @@ def raw_frame():
         {
             "fare_capped": [12.5, 45.0],
             "fare_amount": [12.5, 61.0],
-            "trip_distance": [2.1, 14.15],
+            # Row 1 mimics the corrupt odometer value found in sample_work
+            # (8,003,318 miles on a 22-minute $15.50 trip): the prep's p99 cap
+            # is what neutralises it, so the two columns must differ here or
+            # the capping tests pass vacuously.
+            "trip_distance": [2.1, 8003318.0],
             "distance_capped": [2.1, 14.15],
             "trip_duration_min": [11.0, 42.0],
             "passenger_count": pd.array([1, 3], dtype="int32"),
@@ -176,6 +180,39 @@ class TestBuildFeatures:
 
     def test_fare_amount_is_in_excluded_columns(self):
         assert "fare_amount" in features.EXCLUDED_COLUMNS
+
+    def test_trip_distance_is_in_excluded_columns(self):
+        """The uncapped distance is the raw half of the raw/capped pair, exactly
+        as fare_amount is for the target. Plan §2 derives a p99 cap on
+        trip_distance precisely so the model never sees the uncapped tail."""
+        assert "trip_distance" in features.EXCLUDED_COLUMNS
+
+    def test_given_raw_frame_when_built_then_capped_distance_is_the_distance_feature(
+        self, raw_frame
+    ):
+        X, _ = features.build_features(raw_frame)
+        assert "distance_capped" in X.columns
+        assert "trip_distance" not in X.columns
+
+    def test_given_outlier_distance_when_built_then_distance_feature_is_bounded(
+        self, raw_frame
+    ):
+        """Regression guard for the fold-0 blow-up: an 8M-mile row reaching a
+        StandardScaler'd linear model produced a $9.29M prediction."""
+        X, _ = features.build_features(raw_frame)
+        assert X["distance_capped"].max() == 14.15
+
+    def test_temperature_is_in_excluded_columns(self):
+        """temp_band_ord supersedes the continuous temperature it was banded
+        from; only the transformed column reaches the model."""
+        assert "temperature" in features.EXCLUDED_COLUMNS
+
+    def test_given_raw_frame_when_built_then_temp_band_ord_replaces_temperature(
+        self, raw_frame
+    ):
+        X, _ = features.build_features(raw_frame)
+        assert "temp_band_ord" in X.columns
+        assert "temperature" not in X.columns
 
     def test_given_default_ablation_when_built_then_duration_included(self, raw_frame):
         X, _ = features.build_features(raw_frame)

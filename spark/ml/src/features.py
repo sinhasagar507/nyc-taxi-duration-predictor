@@ -19,19 +19,37 @@ DECIMAL_COLUMNS = ["humidity", "windSpeed", "visibility"]
 # Ordinal order for temp_band (coldest → hottest).
 TEMP_BAND_ORDER = ["Freezing", "Cold", "Mild", "Warm", "Hot"]
 
-# Columns that must never reach the model:
-# - fare_amount: uncapped target (fare_capped is derived from it) — pure leakage
-# - distance_capped: duplicate of trip_distance (we keep the raw distance)
-# - ratecodeid: already consumed into is_airport_trip upstream
-# - pickup_zone/dropoff_zone: replaced by the od_corridor key
-# - §5 hard-leakage list from the modeling plan (post-trip fields; absent from
-#   the prep output but listed defensively in case a future prep re-adds them)
+# Columns that must never reach the model. Two distinct reasons:
+#
+# (a) SUPERSEDED ORIGINALS — the prep emits both halves of a raw/derived pair
+#     and only the derived half is a model input. Keeping both would feed the
+#     model a column and its own transform.
+#     - fare_amount:   uncapped target (fare_capped is derived from it) — also
+#                      pure leakage, so it would be excluded either way
+#     - trip_distance: uncapped distance; distance_capped is the p99-winsorized
+#                      version the prep derives per §2 of the modeling plan.
+#                      sample_work carries a corrupt 8,003,318-mile odometer
+#                      reading that survives every guard except this cap; left
+#                      in, it drove a linear-model fold to a $9.29M prediction.
+#     - temperature:   superseded by temp_band_ord (banded at 32/50/68/85°F)
+#     - ratecodeid:    consumed into is_airport_trip upstream
+#     - pickup_zone / dropoff_zone: consumed into the od_corridor key
+#     (pickup_hour and temp_band are the same kind of exclusion, but they are
+#      dropped by encode_cyclic_hour / encode_temp_band at the point of
+#      transform rather than listed here.)
+#
+# (b) §5 hard-leakage list from the modeling plan — post-trip fields, absent
+#     from the prep output but listed defensively in case a future prep
+#     re-adds them.
 EXCLUDED_COLUMNS = [
+    # (a) superseded originals
     "fare_amount",
-    "distance_capped",
+    "trip_distance",
+    "temperature",
     "ratecodeid",
     "pickup_zone",
     "dropoff_zone",
+    # (b) hard leakage
     "tip_amount",
     "total_amount",
     "mta_tax",

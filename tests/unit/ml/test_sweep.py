@@ -68,13 +68,13 @@ def sweep_data():
     n = 90
     X = pd.DataFrame(
         {
-            "trip_distance": rng.uniform(0.5, 18.0, n),
+            "distance_capped": rng.uniform(0.5, 18.0, n),
             "passenger_count": rng.integers(1, 7, n).astype(float),
             "service_type": rng.choice(["Yellow", "Green"], n),
             "od_corridor": rng.choice(["A→B", "B→C", "C→D", "D→A"], n),
         }
     )
-    y = pd.Series(4.0 * X["trip_distance"] + rng.normal(0, 0.5, n), name="fare_capped")
+    y = pd.Series(4.0 * X["distance_capped"] + rng.normal(0, 0.5, n), name="fare_capped")
     return X, y
 
 
