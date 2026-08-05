@@ -21,11 +21,16 @@ are container-only, so a host run silently sweeps 11 models instead of 14:
     # duration ablation (plan §0 locked decision 1)
     ... python spark/ml/01_run_sweep.py --no-duration --tag no_duration
 
+    # persist the exact training rows for the Spark MLlib baseline (§5b)
+    ... python spark/ml/01_run_sweep.py --write-train
+
 Outputs (per run, keyed by --tag):
     spark/ml/results/leaderboard_<tag>.csv    the ranked table
     spark/ml/results/sweep_<tag>.json         run metadata — rows, folds, models,
                                               env, wall time — so a leaderboard is
                                               never a number without provenance
+    spark/ml/data/sample_<tag>_train.parquet  --write-train only: the train half of
+                                              the sealed split, for Spark
 
 Design notes:
   - A stratified 20% holdout is sealed off before the sweep starts and is never
@@ -61,6 +66,7 @@ from spark.ml.src.evaluate import (  # noqa: E402
     STRATIFY_COLUMNS,
     make_cv,
     make_holdout,
+    write_train_split,
 )
 from spark.ml.src.features import build_features  # noqa: E402
 from spark.ml.src.sweep import build_model_specs, run_sweep  # noqa: E402
@@ -108,9 +114,21 @@ def main() -> None:
     ap.add_argument("--no-holdout", action="store_true",
                     help="sweep the whole sample — smoke/wiring runs only, "
                          "never a run whose leaderboard you intend to act on")
+    ap.add_argument("--write-train", action="store_true",
+                    help="persist the train half of the sealed split to "
+                         "spark/ml/data/ for the Spark MLlib baseline (§5b), "
+                         "which cannot re-derive it")
     ap.add_argument("--tag", default=None,
                     help="output filename suffix (default: derived from options)")
     args = ap.parse_args()
+
+    # A "train split" only means something opposite a sealed holdout; without
+    # one the file would be the whole sample under a name promising otherwise.
+    if args.write_train and args.no_holdout:
+        raise SystemExit(
+            "[error] --write-train needs a sealed holdout to be the train half "
+            "OF something; --no-holdout makes the file the entire sample."
+        )
 
     tag = args.tag or f"{args.sample}{'' if not args.no_duration else '_no_duration'}"
 
@@ -133,6 +151,16 @@ def main() -> None:
               f"({args.holdout_frac:.0%}, stratified, seed={RANDOM_STATE}) — SEALED")
     else:
         print("[split] NO HOLDOUT — sweeping the full sample (smoke run)")
+
+    # Hand the exact training rows to Spark. `--limit-rows` goes in the
+    # filename so a smoke run can never overwrite the real split.
+    train_split_path = None
+    if args.write_train:
+        suffix = f"_limit{args.limit_rows}" if args.limit_rows else ""
+        train_split_path = write_train_split(
+            X, y, DATA_DIR / f"sample_{tag}{suffix}_train.parquet"
+        )
+        print(f"[write] train split -> {train_split_path} ({len(X)} rows)")
 
     specs = build_model_specs(include_baseline=args.baseline)
     if args.only:
@@ -166,6 +194,11 @@ def main() -> None:
         "holdout_rows": n_holdout,
         "holdout_frac": 0.0 if args.no_holdout else args.holdout_frac,
         "holdout_stratified_on": None if args.no_holdout else list(STRATIFY_COLUMNS),
+        # Which file, if any, the Spark baseline should read to train on these
+        # exact rows — so an MLlib leaderboard row is traceable to a split.
+        "train_split_path": (
+            str(train_split_path.relative_to(REPO_ROOT)) if train_split_path else None
+        ),
         "models": [s.name for s in specs],
         "elapsed_s": round(elapsed, 1),
         "python": platform.python_version(),

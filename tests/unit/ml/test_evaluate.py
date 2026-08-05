@@ -259,3 +259,119 @@ class TestMakeHoldout:
         y = pd.Series(np.arange(100, dtype=float), name="fare_capped")
         X_tr, X_te, _, _ = ev.make_holdout(X, y)
         assert len(X_te) == 20 and len(X_tr) == 80
+
+
+# ---------------------------------------------------------------------------
+# write_train_split — handing the sealed split's TRAIN half to Spark
+# ---------------------------------------------------------------------------
+
+class TestWriteTrainSplit:
+    """The MLlib baseline (plan §5b) must train on the *same* rows the sklearn
+    sweep used, but `make_holdout` is `sklearn.train_test_split` and seeds do
+    not transfer across libraries — Spark cannot re-derive the split. So pandas
+    writes the train half once and Spark reads that file.
+    """
+
+    @pytest.fixture
+    def frame(self):
+        X = pd.DataFrame(
+            {
+                "distance_capped": np.arange(100, dtype=float),
+                "service_type": ["Yellow", "Green"] * 50,
+            }
+        )
+        y = pd.Series(np.arange(100, dtype=float) * 2, name="fare_capped")
+        return X, y
+
+    def test_writes_a_file_at_the_requested_path(self, frame, tmp_path):
+        X, y = frame
+        out = tmp_path / "sample_work_train.parquet"
+        ev.write_train_split(X, y, out)
+        assert out.exists()
+
+    def test_returns_the_path_it_wrote(self, frame, tmp_path):
+        X, y = frame
+        out = tmp_path / "train.parquet"
+        assert ev.write_train_split(X, y, out) == out
+
+    def test_row_count_round_trips(self, frame, tmp_path):
+        X, y = frame
+        out = tmp_path / "train.parquet"
+        ev.write_train_split(X, y, out)
+        assert len(pd.read_parquet(out)) == len(X)
+
+    def test_target_column_is_included_and_named(self, frame, tmp_path):
+        """MLlib needs `labelCol="fare_capped"` in the same frame — a features
+        file without the label is useless to the Spark script."""
+        X, y = frame
+        out = tmp_path / "train.parquet"
+        ev.write_train_split(X, y, out)
+        back = pd.read_parquet(out)
+        assert list(back.columns) == list(X.columns) + ["fare_capped"]
+
+    def test_feature_and_target_values_stay_row_aligned(self, frame, tmp_path):
+        X, y = frame
+        out = tmp_path / "train.parquet"
+        ev.write_train_split(X, y, out)
+        back = pd.read_parquet(out)
+        # y was built as 2x the distance column; misalignment breaks this.
+        assert (back["fare_capped"] == back["distance_capped"] * 2).all()
+
+    def test_pandas_index_is_not_written_as_a_column(self, frame, tmp_path):
+        """pandas writes the index as `__index_level_0__` by default and Spark
+        reads it back as a real column — it would land in the numeric
+        passthrough and become a feature."""
+        X, y = frame
+        out = tmp_path / "train.parquet"
+        ev.write_train_split(X, y, out)
+        back = pd.read_parquet(out)
+        assert not any(c.startswith("__index_level_") for c in back.columns)
+
+    def test_shuffled_non_contiguous_index_still_aligns(self, frame, tmp_path):
+        """The real input is make_holdout's output, whose index is shuffled and
+        gappy. Concatenating on position rather than label would scramble it."""
+        X, y = frame
+        X_tr, _, y_tr, _ = ev.make_holdout(X, y, test_size=0.2)
+        assert not X_tr.index.equals(pd.RangeIndex(len(X_tr)))  # guard the premise
+        out = tmp_path / "train.parquet"
+        ev.write_train_split(X_tr, y_tr, out)
+        back = pd.read_parquet(out)
+        assert (back["fare_capped"] == back["distance_capped"] * 2).all()
+
+    def test_creates_missing_parent_directories(self, frame, tmp_path):
+        X, y = frame
+        out = tmp_path / "nested" / "dir" / "train.parquet"
+        ev.write_train_split(X, y, out)
+        assert out.exists()
+
+    def test_writes_exactly_the_sweep_train_half(self, frame, tmp_path):
+        """End to end: the file Spark reads holds the 80% the sweep trained on
+        and none of the sealed 20%."""
+        X, y = frame
+        X_tr, X_te, y_tr, _ = ev.make_holdout(X, y)
+        out = tmp_path / "train.parquet"
+        ev.write_train_split(X_tr, y_tr, out)
+        back = pd.read_parquet(out)
+        assert len(back) == len(X_tr) == 80
+        sealed = set(X_te["distance_capped"])
+        assert sealed.isdisjoint(back["distance_capped"])
+
+    def test_explicit_target_name_overrides_the_series_name(self, frame, tmp_path):
+        X, y = frame
+        out = tmp_path / "train.parquet"
+        ev.write_train_split(X, y, out, target_name="label")
+        assert "label" in pd.read_parquet(out).columns
+
+    def test_unnamed_target_without_explicit_name_raises(self, frame, tmp_path):
+        """Silently writing a column called `None` would fail far away, inside
+        Spark, with an unrecognisable error."""
+        X, y = frame
+        with pytest.raises(ValueError):
+            ev.write_train_split(X, y.rename(None), tmp_path / "t.parquet")
+
+    def test_target_name_colliding_with_a_feature_raises(self, frame, tmp_path):
+        """A duplicate column name silently doubles a feature in Spark."""
+        X, y = frame
+        with pytest.raises(ValueError):
+            ev.write_train_split(X, y, tmp_path / "t.parquet",
+                                 target_name="distance_capped")

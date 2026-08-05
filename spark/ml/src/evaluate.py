@@ -7,6 +7,8 @@ Models arrive as Pipeline(preprocessor, model) so all preprocessing is fit
 inside each training fold (leakage-safe by construction).
 """
 
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 from sklearn.metrics import (
@@ -87,6 +89,44 @@ def make_holdout(
         stratify=strata,
     )
     return X_train, X_test, y_train, y_test
+
+
+def write_train_split(X, y, path, target_name: str | None = None) -> Path:
+    """Persist the train half of the sealed split as one parquet file.
+
+    The MLlib baseline (plan §5b) has to train on the *same* rows the sklearn
+    sweep used, but `make_holdout` is `sklearn.train_test_split` — seeds do not
+    transfer across libraries, so Spark cannot re-derive the split. pandas
+    writes it once and the Spark script reads that file. It stays a derived
+    artifact: regenerable from sample + seed + fraction, so it is gitignored
+    rather than versioned.
+
+    Features and target go in **one** frame because MLlib needs `labelCol` in
+    the same DataFrame. They are joined on index label, not position, since the
+    input is `make_holdout`'s output whose index is shuffled and gappy.
+
+    The pandas index is deliberately not written: `to_parquet` would emit it as
+    `__index_level_0__`, Spark would read that back as an ordinary column, and
+    `split_column_groups` would file it under the numeric passthrough — a row
+    number as a model feature.
+    """
+    name = target_name if target_name is not None else y.name
+    if name is None:
+        raise ValueError(
+            "target has no name and target_name was not given — writing it as "
+            "a column called 'None' would fail later, inside Spark"
+        )
+    if name in X.columns:
+        raise ValueError(
+            f"target name '{name}' collides with a feature column — the "
+            "duplicate would silently double that feature in Spark"
+        )
+
+    frame = pd.concat([X, y.rename(name)], axis=1)
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    frame.to_parquet(path, index=False)
+    return path
 
 
 _SCORING = {
