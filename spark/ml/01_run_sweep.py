@@ -29,8 +29,11 @@ Outputs (per run, keyed by --tag):
     spark/ml/results/sweep_<tag>.json         run metadata — rows, folds, models,
                                               env, wall time — so a leaderboard is
                                               never a number without provenance
-    spark/ml/data/sample_<tag>_train.parquet  --write-train only: the train half of
-                                              the sealed split, for Spark
+    spark/ml/data/sample_<sample>_train.parquet
+                                              --write-train only: the train half of
+                                              the sealed split, for Spark. Named from
+                                              the sample/ablation/limit — NOT --tag,
+                                              which only keys the two files above.
 
 Design notes:
   - A stratified 20% holdout is sealed off before the sweep starts and is never
@@ -66,6 +69,7 @@ from spark.ml.src.evaluate import (  # noqa: E402
     STRATIFY_COLUMNS,
     make_cv,
     make_holdout,
+    train_split_filename,
     write_train_split,
 )
 from spark.ml.src.features import build_features  # noqa: E402
@@ -152,13 +156,18 @@ def main() -> None:
     else:
         print("[split] NO HOLDOUT — sweeping the full sample (smoke run)")
 
-    # Hand the exact training rows to Spark. `--limit-rows` goes in the
-    # filename so a smoke run can never overwrite the real split.
+    # Hand the exact training rows to Spark. The filename comes from what
+    # determines the contents, NOT from --tag — see train_split_filename.
     train_split_path = None
     if args.write_train:
-        suffix = f"_limit{args.limit_rows}" if args.limit_rows else ""
         train_split_path = write_train_split(
-            X, y, DATA_DIR / f"sample_{tag}{suffix}_train.parquet"
+            X,
+            y,
+            DATA_DIR / train_split_filename(
+                args.sample,
+                include_duration=not args.no_duration,
+                limit_rows=args.limit_rows,
+            ),
         )
         print(f"[write] train split -> {train_split_path} ({len(X)} rows)")
 

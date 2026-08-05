@@ -91,6 +91,33 @@ def make_holdout(
     return X_train, X_test, y_train, y_test
 
 
+def train_split_filename(
+    sample: str,
+    include_duration: bool = True,
+    limit_rows: int | None = None,
+) -> str:
+    """Name the persisted train split from what determines its contents.
+
+    Deliberately does **not** take the run's `--tag`. A tag is a presentation
+    label chosen per invocation to keep leaderboard files apart; keying a data
+    artifact off it means `--tag anything` silently produces a differently
+    named split, and the file plan §5b points at stops existing. The three
+    inputs here are the ones that actually change what is in the file: which
+    prep sample, whether `trip_duration_min` is in the column set, and whether
+    the rows were limited for a smoke run.
+
+    A row limit lands in the name so a smoke run can never overwrite the real
+    split — `limit_rows=0` is a limit, not a missing one.
+    """
+    parts = [f"sample_{sample}"]
+    if not include_duration:
+        parts.append("no_duration")
+    if limit_rows is not None:
+        parts.append(f"limit{limit_rows}")
+    parts.append("train")
+    return "_".join(parts) + ".parquet"
+
+
 def write_train_split(X, y, path, target_name: str | None = None) -> Path:
     """Persist the train half of the sealed split as one parquet file.
 

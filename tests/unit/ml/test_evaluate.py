@@ -375,3 +375,51 @@ class TestWriteTrainSplit:
         with pytest.raises(ValueError):
             ev.write_train_split(X, y, tmp_path / "t.parquet",
                                  target_name="distance_capped")
+
+
+# ---------------------------------------------------------------------------
+# train_split_filename — derived from content, never from --tag
+# ---------------------------------------------------------------------------
+
+class TestTrainSplitFilename:
+    """The filename must depend only on what changes the file's *contents*:
+    which sample, whether duration is in, and any row limit. An earlier version
+    keyed it off `--tag`, which is a presentation label for leaderboard outputs
+    and is freely overridable — so `--tag worksplit` produced
+    `sample_worksplit_train.parquet` and the artifact stopped matching the name
+    plan §5b refers to.
+    """
+
+    def test_default_work_run_matches_the_name_in_the_plan(self):
+        assert ev.train_split_filename("work") == "sample_work_train.parquet"
+
+    def test_full_sample_gets_its_own_name(self):
+        assert ev.train_split_filename("full") == "sample_full_train.parquet"
+
+    def test_duration_ablation_is_a_different_file(self):
+        """Dropping trip_duration_min changes the column set, so it cannot
+        share a filename with the duration-on split."""
+        assert (
+            ev.train_split_filename("work", include_duration=False)
+            == "sample_work_no_duration_train.parquet"
+        )
+
+    def test_row_limit_is_in_the_name_so_smoke_runs_cannot_clobber(self):
+        assert (
+            ev.train_split_filename("work", limit_rows=100_000)
+            == "sample_work_limit100000_train.parquet"
+        )
+
+    def test_limit_and_ablation_compose_deterministically(self):
+        assert (
+            ev.train_split_filename("work", include_duration=False, limit_rows=5000)
+            == "sample_work_no_duration_limit5000_train.parquet"
+        )
+
+    def test_zero_limit_is_still_a_limit_not_a_missing_one(self):
+        """`if limit_rows:` would treat 0 as absent and silently reuse the full
+        split's name for a 0-row file."""
+        assert "limit0" in ev.train_split_filename("work", limit_rows=0)
+
+    def test_no_limit_leaves_the_name_clean(self):
+        assert "limit" not in ev.train_split_filename("work", limit_rows=None)
