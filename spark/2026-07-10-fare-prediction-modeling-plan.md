@@ -150,9 +150,28 @@ All models wrapped in `Pipeline(preprocessor, model)`, all scored through the Ph
 
 ## 5b. Phase 4b — Spark MLlib baseline (D3, adopted 2026-07-30)
 
-One Spark-native model trained on `sample_full.parquet` (12.75M rows) — the DE-portfolio
-counterpart to the sklearn sweep. Runs **after** Phase 4 so there is a locked champion to
-compare against.
+One Spark-native model — the DE-portfolio counterpart to the sklearn sweep. Runs **after**
+Phase 4 so there is a locked champion to compare against.
+
+**Where it runs — revised 2026-08-04.** Locally, the baseline trains on the **`sample_work`
+train split: the same 612,608 rows the sklearn sweep used**, not on `sample_full`. Full-scale
+training on `sample_full` (12.75M rows) — for **both** MLlib *and* sklearn — moves to the
+**Cloud** run and is not attempted on the local machine. See §5c.
+
+Two things fall out of running local MLlib on the sweep's own train split, both good:
+
+- The comparison is **like-for-like on rows.** Same pool, same feature set, same 15-feature
+  contract — the only remaining difference is the stack itself, which is the thing being
+  measured.
+- The sealed 153,153-row holdout stays **genuinely untouched by every model in the project**,
+  MLlib included. Training MLlib on `sample_full` would have put 1.2% of its training data
+  inside the sealed test set, which is harmless for CV-vs-CV but poisons any write-up that
+  places an MLlib number beside the Phase-5 holdout score.
+
+The split cannot be reproduced inside Spark — `make_holdout` is `sklearn.train_test_split`
+and seeds do not transfer across libraries. So pandas carves it once and persists
+`sample_work_train.parquet` (regenerable from sample + seed + frac; gitignored), and the
+Spark script reads that file.
 
 **Model:** `pyspark.ml.regression.GBTRegressor` — the strongest thing MLlib offers, so the
 head-to-head is meaningful rather than a strawman. (`LinearRegression` is a one-line
@@ -178,22 +197,82 @@ versus a sklearn model with it is not a like-for-like result. So report **three*
 
 | Row | Stack | Rows | `od_corridor` |
 |---|---|---|---|
-| Phase-4 champion | sklearn | `sample_full` | ✅ target-encoded |
-| Champion, corridor dropped | sklearn | `sample_full` | ❌ |
-| MLlib GBT | Spark | `sample_full` | ❌ |
+| Phase-4 champion | sklearn | 612,608 (`sample_work` train) | ✅ target-encoded |
+| Champion, corridor dropped | sklearn | 612,608 (`sample_work` train) | ❌ |
+| MLlib GBT | Spark | 612,608 (`sample_work` train) | ❌ |
 
 Row 2 vs row 3 is the honest stack comparison; row 1 vs row 2 quantifies what the
-target-encoded corridor is actually worth. Both are worth reporting.
+target-encoded corridor is actually worth. Both are worth reporting. Row 2 needs a
+`--drop-corridor` flag on `01_run_sweep.py` — it does not exist yet.
+
+**Naming, not schema.** All three rows share the `evaluate()` key set, so the pool goes in
+the `model` string (`mllib_gbt@work612k`, `xgboost_nocorridor@work612k`) rather than a new
+column. Adding a field would break the shared-leaderboard contract that
+`test_row_keys_match_the_evaluate_contract` exists to protect.
 
 **Metrics + folds:** `RegressionEvaluator` for mae/rmse/r2 — the same three metrics — with
-k-fold at `seed=42` matching `make_cv()`. Results adapt into the existing `leaderboard()`
-as ordinary rows, so everything still lands in one table.
+**the same k (5) and the same train pool as `make_cv()`, but different fold membership.**
+Seeds do not transfer across libraries: `KFold(seed=42)` and a Spark splitter at `seed=42`
+partition differently. Observed fold-to-fold SE in the work sweep was ~$0.002, so this is
+noise rather than a confound — but it is not the equivalence an earlier draft of this
+section claimed. Results adapt into the existing `leaderboard()` as ordinary rows, so
+everything still lands in one table.
 
 **Expected outcome, stated up front:** the MLlib GBT lands close to but behind the sklearn
-boosting champion, mostly from the missing corridor feature and MLlib's weaker GBT
-implementation — and it takes materially longer per fit at 12.75M rows than sklearn does at
-765K. Confirming *that* is the point: it demonstrates the tool at the scale where it earns
-its keep, and documents why the sweep itself doesn't live there.
+boosting champion — mostly from the missing corridor feature and MLlib's weaker GBT
+implementation — and costs materially more wall time for the same 612,608 rows, because
+Spark's scheduling and shuffle overhead buys nothing at a size that fits in memory.
+Confirming *that* is the point locally: it establishes the per-row cost of each stack
+cleanly, and §5c is where the scale argument gets made instead.
+
+---
+
+## 5c. Full-scale training — deferred to Cloud (decided 2026-08-04)
+
+**Both stacks train on `sample_full` (12,748,027 rows) in the Cloud, not locally.** This
+covers the sklearn champion's final numbers *and* the MLlib at-scale run. Locally we stay on
+the `sample_work` train split (§5b).
+
+Measured on the local machine (Apple M3 Pro, 18 GiB RAM, 11 cores) on 2026-08-04:
+
+| | value | source |
+|---|---|---|
+| feature frame, full sample | **4.8 GB** | extrapolated from a 500K-row slice |
+| 80% train split | **3.9 GB** | same |
+| dominated by | `od_corridor` 66 MB / 500K rows, + 3 more object-dtype string columns (80% of footprint) | per-column `memory_usage(deep=True)` |
+| work sweep, 14 models × 5 folds | **30.1 min** wall (`elapsed_s` 1805.9) | `results/sweep_work.json` |
+| scale factor 612,608 → 10.2M train | **16.6×** | — |
+| whole sweep at full scale, linear floor | **~8.2 h** | Σ fit_time × 5 × 16.6 |
+
+Three things this table says:
+
+1. **The sweep runs sequentially.** Σ(per-fold fit) × 5 folds = 1778.5s ≈ the 1805.9s
+   elapsed, so `n_jobs` is effectively 1 and ten cores idle. Cloud sizing should fix that
+   before it buys more RAM.
+2. **Cost is wildly uneven across models.** At full scale: lightgbm and xgboost ~1.4 min
+   each, catboost ~13 min — but `stacking` ~4 h+ (it refits bases under internal CV, so it
+   scales superlinearly), `gradient_boosting` ~83 min, `random_forest` ~50 min with a real
+   memory risk from fully-grown trees on 10.2M rows.
+3. **Re-running all 14 at scale answers nothing.** Selection is already settled — `lasso`
+   and `elasticnet` posted RMSE ~3.0 against lightgbm's 1.05, and 20× the data does not
+   rehabilitate a model that is three times worse. Full scale exists to produce the
+   champion's final number and §5b row 2, which needs 3–4 models, not 14.
+
+**Cloud run scope, when it happens:** top 4 by RMSE (`lightgbm`, `catboost`, `stacking`,
+`extra_trees`) + the corridor-dropped champion + MLlib GBT. Include `stacking` despite its
+cost — the top four sit within ~$0.005 MAE of each other, and bagging/stacking families
+typically gain more from data than boosters do, so the ranking may legitimately move at
+scale. That is a result worth having rather than assuming.
+
+**Cheap enabler, do it first:** cast `od_corridor`, `service_type`, `pickup_borough`,
+`dropoff_borough` to `category` dtype. Four string columns are ~80% of the 4.8 GB;
+`od_corridor`'s 19,953 levels become int16 codes plus a small dictionary. Expect the frame
+to drop to roughly a third. Verify `TargetEncoder` and `OneHotEncoder` still behave on
+categorical dtype before relying on it.
+
+**Unknown, not estimated:** `TargetEncoder` cross-fitting over 19,953 corridor levels at
+10.2M rows. It cannot be extrapolated from a 500K slice — measure it with a single-model
+probe (`--sample full --only lightgbm`) before committing to a machine size.
 
 ---
 
@@ -360,6 +439,14 @@ now would churn Docker mounts and import paths for cosmetics — not worth it.
       `--no-holdout`. 208 unit tests green.
       **Known, untouched:** design matrix is rank 25/27 (full one-hot + intercept =
       dummy trap, cond ≈ 4e15); coefficients unstable across folds. Separate defect.
-- [ ] Phase 4b: Spark MLlib GBT baseline on `sample_full` (§5b)
+- [~] Phase 4b: Spark MLlib GBT baseline (§5b) — pure helpers `spark/ml/src/mllib.py` +
+      `tests/unit/ml/test_mllib.py` written TDD (19 tests green, uncommitted as of
+      2026-08-04). `01_mllib_baseline.py` not written yet.
+      **Run target revised 2026-08-04:** locally on the `sample_work` train split
+      (612,608 rows — the sweep's own rows), **not** `sample_full`.
+- [ ] **Cloud full-scale run (§5c, decided 2026-08-04).** `sample_full` (12.75M) for
+      **both** sklearn and MLlib. Local machine measured at 4.8 GB frame / ~8.2 h for the
+      whole sweep on an 18 GiB M3 Pro; scope the cloud run to the top 4 + corridor-dropped
+      champion + MLlib GBT rather than all 14.
 - [ ] Phase 5: tune + diagnose — scores the sealed holdout **once**, at the end (§4a)
 - [ ] Phase 6: neural nets
