@@ -20,7 +20,9 @@ import numpy as np
 import pytest
 
 from spark.ml.src import evaluate as ev
+from spark.ml.src import features as ft
 from spark.ml.src import mllib
+from spark.ml.src import preprocess
 
 
 # The real 15-feature contract, as recorded in results/sweep_work.json.
@@ -52,22 +54,22 @@ class TestColumnGroups:
         """19,953 one-hot columns is not viable in MLlib (plan §5b). The drop is
         intentional and must be total — appearing in the numeric passthrough
         would be worse than appearing in the categoricals."""
-        categorical, numeric = mllib.split_column_groups(WORK_FEATURES)
+        categorical, numeric, _ = mllib.split_column_groups(WORK_FEATURES)
         assert "od_corridor" not in categorical
         assert "od_corridor" not in numeric
 
     def test_categorical_group_is_the_low_cardinality_trio(self):
         """Sorted, not in DataFrame order — see
         test_order_is_deterministic_across_calls for why."""
-        categorical, _ = mllib.split_column_groups(WORK_FEATURES)
+        categorical, _, _ = mllib.split_column_groups(WORK_FEATURES)
         assert categorical == [
             "dropoff_borough",
             "pickup_borough",
             "service_type",
         ]
 
-    def test_numeric_group_is_everything_else(self):
-        _, numeric = mllib.split_column_groups(WORK_FEATURES)
+    def test_numeric_group_is_the_allowlisted_numerics_and_binaries(self):
+        _, numeric, _ = mllib.split_column_groups(WORK_FEATURES)
         assert numeric == [
             "distance_capped",
             "humidity",
@@ -83,18 +85,18 @@ class TestColumnGroups:
         ]
 
     def test_groups_are_disjoint(self):
-        categorical, numeric = mllib.split_column_groups(WORK_FEATURES)
+        categorical, numeric, _ = mllib.split_column_groups(WORK_FEATURES)
         assert set(categorical).isdisjoint(numeric)
 
     def test_groups_cover_every_column_except_the_dropped_one(self):
-        categorical, numeric = mllib.split_column_groups(WORK_FEATURES)
+        categorical, numeric, _ = mllib.split_column_groups(WORK_FEATURES)
         covered = set(categorical) | set(numeric)
         assert covered == set(WORK_FEATURES) - {"od_corridor"}
 
     def test_absent_categorical_is_skipped_not_invented(self):
         """Reduced frames (smoke runs, ablations) must not produce a pipeline
         stage for a column the DataFrame does not have."""
-        categorical, numeric = mllib.split_column_groups(
+        categorical, numeric, _ = mllib.split_column_groups(
             ["distance_capped", "service_type"]
         )
         assert categorical == ["service_type"]
@@ -102,7 +104,7 @@ class TestColumnGroups:
 
     def test_duration_ablation_frame_has_no_duration_numeric(self):
         columns = [c for c in WORK_FEATURES if c != "trip_duration_min"]
-        _, numeric = mllib.split_column_groups(columns)
+        _, numeric, _ = mllib.split_column_groups(columns)
         assert "trip_duration_min" not in numeric
 
     def test_order_is_deterministic_across_calls(self):
@@ -112,8 +114,90 @@ class TestColumnGroups:
         second = mllib.split_column_groups(list(reversed(WORK_FEATURES)))
         assert first == second
 
-    def test_empty_column_list_gives_two_empty_groups(self):
-        assert mllib.split_column_groups([]) == ([], [])
+    def test_empty_column_list_gives_three_empty_groups(self):
+        assert mllib.split_column_groups([]) == ([], [], [])
+
+
+# ---------------------------------------------------------------------------
+# Unrecognised columns — the allowlist, and saying what it dropped
+# ---------------------------------------------------------------------------
+
+class TestUnrecognisedColumns:
+    """`numeric` is an allowlist, mirroring preprocess.build_preprocessor's
+    `remainder="drop"`, so both stacks discard the same things. But a silent
+    drop and a silent include are both ways of not telling you: the dropped
+    names come back so the Spark script can print them.
+    """
+
+    def test_unknown_column_does_not_become_a_feature(self):
+        """The concrete case: a stray pandas index column. Under the old
+        catch-all it landed in the numeric passthrough and GBT trained on a
+        row number — unlearnable at inference, where there is no row number."""
+        _, numeric, _ = mllib.split_column_groups(
+            WORK_FEATURES + ["__index_level_0__"]
+        )
+        assert "__index_level_0__" not in numeric
+
+    def test_unknown_column_is_reported_not_silently_dropped(self):
+        *_, unrecognised = mllib.split_column_groups(
+            WORK_FEATURES + ["__index_level_0__"]
+        )
+        assert unrecognised == ["__index_level_0__"]
+
+    def test_leaked_target_column_is_reported_not_trained_on(self):
+        """The d83141b failure class: a superseded/leaky column reaching the
+        model. sklearn drops it via remainder="drop"; MLlib must too."""
+        _, numeric, unrecognised = mllib.split_column_groups(
+            WORK_FEATURES + ["fare_amount", "total_amount"]
+        )
+        assert "fare_amount" not in numeric and "total_amount" not in numeric
+        assert unrecognised == ["fare_amount", "total_amount"]
+
+    def test_od_corridor_is_dropped_but_never_called_unrecognised(self):
+        """Plan §5b: the corridor exclusion is a documented finding, not an
+        anomaly. Lumping the two would bury the finding in noise."""
+        *_, unrecognised = mllib.split_column_groups(WORK_FEATURES)
+        assert unrecognised == []
+
+    def test_unrecognised_is_sorted_for_stable_reporting(self):
+        *_, unrecognised = mllib.split_column_groups(["zzz_col", "aaa_col"])
+        assert unrecognised == ["aaa_col", "zzz_col"]
+
+    def test_reduced_frame_reports_nothing_unrecognised(self):
+        """Absent is not the same as unknown — the duration ablation and smoke
+        frames must stay silent, or the warning becomes noise people ignore."""
+        columns = [c for c in WORK_FEATURES if c != "trip_duration_min"]
+        *_, unrecognised = mllib.split_column_groups(columns)
+        assert unrecognised == []
+
+
+# ---------------------------------------------------------------------------
+# Drift guards — the allowlists are derived, not retyped
+# ---------------------------------------------------------------------------
+
+class TestAllowlistsTrackTheirOwners:
+    def test_numeric_allowlist_is_sklearn_numerics_plus_binaries(self):
+        """GBT does not care that sklearn separates binaries from numerics (it
+        splits, it does not scale), but the union must match or the two stacks
+        are not training on the same feature set."""
+        assert set(mllib.MLLIB_NUMERIC_COLUMNS) == set(
+            preprocess.NUMERIC_COLUMNS
+        ) | set(preprocess.BINARY_COLUMNS)
+
+    def test_categorical_allowlist_is_the_features_contract_minus_corridor(self):
+        assert set(mllib.MLLIB_CATEGORICAL_COLUMNS) == set(
+            ft.CATEGORICAL_COLUMNS
+        ) - set(mllib.MLLIB_EXCLUDED_COLUMNS)
+
+    def test_allowlists_plus_exclusions_cover_the_whole_feature_contract(self):
+        """A new feature added to the prep must be classified deliberately. If
+        it is not, it shows up here rather than as a silent drop at run time."""
+        classified = (
+            set(mllib.MLLIB_NUMERIC_COLUMNS)
+            | set(mllib.MLLIB_CATEGORICAL_COLUMNS)
+            | set(mllib.MLLIB_EXCLUDED_COLUMNS)
+        )
+        assert set(WORK_FEATURES) == classified
 
 
 # ---------------------------------------------------------------------------

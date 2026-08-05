@@ -6,21 +6,36 @@ columns get one-hot encoded, which pass through raw, and how a Spark result
 becomes a leaderboard row — are ordinary data transformations, so they live
 here and are unit-tested on the host venv without a SparkSession.
 
-Two contracts matter:
+Three contracts matter:
 
   - `od_corridor` is dropped entirely. MLlib has no TargetEncoder and the
     corridor has 19,953 levels, so one-hot encoding it is not viable. Per §5b
     this is the Tier-2 gap from §10 showing up in practice — a finding to
     report, not a defect to paper over — which is why the exclusion is a named
     constant here rather than an omission somewhere in the script.
-  - Rows produced here are the same shape as `evaluate.evaluate()` rows, so the
-    Spark baseline sorts into the one leaderboard next to the sklearn sweep
-    instead of living in a parallel table.
+  - Column groups are **allowlists**, mirroring
+    `preprocess.build_preprocessor`'s `remainder="drop"`. Both stacks must
+    discard the same columns or they are not training on the same feature set,
+    and the comparison §5b exists to make stops meaning anything. An earlier
+    catch-all ("numeric is everything not categorical") sent any unexpected
+    column straight into the VectorAssembler — a stray pandas index would have
+    become a model feature, and a re-added `fare_amount` would have been
+    trained on while sklearn silently dropped it.
+  - Dropped columns are **named, not swallowed**. A silent drop and a silent
+    include are both ways of not telling you, so the unrecognised names come
+    back for the script to print. Deliberate exclusions are reported
+    separately from anomalies: burying `od_corridor` in a list of surprises
+    would bury the §5b finding too.
+
+Rows produced here are the same shape as `evaluate.evaluate()` rows, so the
+Spark baseline sorts into the one leaderboard next to the sklearn sweep instead
+of living in a parallel table.
 """
 
 import numpy as np
 
 from .features import CATEGORICAL_COLUMNS
+from .preprocess import BINARY_COLUMNS, NUMERIC_COLUMNS
 
 # Dropped from the MLlib baseline entirely — see module docstring.
 MLLIB_EXCLUDED_COLUMNS = ("od_corridor",)
@@ -32,29 +47,44 @@ MLLIB_CATEGORICAL_COLUMNS = tuple(
     c for c in CATEGORICAL_COLUMNS if c not in MLLIB_EXCLUDED_COLUMNS
 )
 
+# Everything that goes into the VectorAssembler unscaled. sklearn keeps numerics
+# and binaries apart because StandardScaler should not touch a 0/1 flag; GBT
+# splits rather than scales, so the distinction is meaningless here and the two
+# lists are unioned. Derived, not retyped, for the same reason as above —
+# and the union is stable if a column ever moves between the two sklearn lists.
+MLLIB_NUMERIC_COLUMNS = tuple(dict.fromkeys([*NUMERIC_COLUMNS, *BINARY_COLUMNS]))
+
 # The three metrics every model in this project reports (evaluate.compute_metrics).
 METRIC_KEYS = ("mae", "rmse", "r2")
 
 
-def split_column_groups(columns) -> tuple[list[str], list[str]]:
-    """Split a feature-frame's columns into (categorical, numeric) for MLlib.
+def split_column_groups(columns) -> tuple[list[str], list[str], list[str]]:
+    """Split a feature frame's columns into (categorical, numeric, unrecognised).
 
     Categoricals go through StringIndexer + OneHotEncoder; numerics pass
     straight into the VectorAssembler, unscaled — GBT is a tree, so scaling
-    buys nothing.
+    buys nothing. **Unrecognised columns go nowhere near the model**; they are
+    returned so the caller can say what it ignored.
 
-    Both groups come back **sorted**, not in DataFrame order. VectorAssembler
-    input order is what fixes feature-importance indices, so deriving it from
-    however the caller's columns happen to be arranged would silently relabel
-    importances when an upstream frame is rebuilt in a different order.
+    All three lists come back **sorted**, not in DataFrame order.
+    VectorAssembler input order is what fixes feature-importance indices, so
+    deriving it from however the caller's columns happen to be arranged would
+    silently relabel importances when an upstream frame is rebuilt in a
+    different order. `unrecognised` is sorted so a warning reads the same twice.
 
-    Columns not present are simply absent from the result, so reduced frames
-    (smoke runs, the duration ablation) need no special-casing.
+    Absent is not the same as unknown. Columns that simply aren't there are
+    absent from the result and reported nowhere, so reduced frames (smoke runs,
+    the duration ablation) need no special-casing and produce no warning — a
+    warning that fires on every ordinary run is one people stop reading.
+    Likewise `MLLIB_EXCLUDED_COLUMNS` is dropped without being called
+    unrecognised: that exclusion is a documented §5b finding, not a surprise.
     """
     kept = [c for c in columns if c not in MLLIB_EXCLUDED_COLUMNS]
     categorical = sorted(c for c in kept if c in MLLIB_CATEGORICAL_COLUMNS)
-    numeric = sorted(c for c in kept if c not in MLLIB_CATEGORICAL_COLUMNS)
-    return categorical, numeric
+    numeric = sorted(c for c in kept if c in MLLIB_NUMERIC_COLUMNS)
+    known = set(MLLIB_CATEGORICAL_COLUMNS) | set(MLLIB_NUMERIC_COLUMNS)
+    unrecognised = sorted(c for c in kept if c not in known)
+    return categorical, numeric, unrecognised
 
 
 def fold_metrics_to_row(name: str, fold_metrics, fit_times) -> dict:

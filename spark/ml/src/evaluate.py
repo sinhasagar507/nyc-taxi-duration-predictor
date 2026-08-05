@@ -106,9 +106,12 @@ def write_train_split(X, y, path, target_name: str | None = None) -> Path:
     input is `make_holdout`'s output whose index is shuffled and gappy.
 
     The pandas index is deliberately not written: `to_parquet` would emit it as
-    `__index_level_0__`, Spark would read that back as an ordinary column, and
-    `split_column_groups` would file it under the numeric passthrough — a row
-    number as a model feature.
+    `__index_level_0__` and Spark would read that back as an ordinary column.
+    `mllib.split_column_groups` now allowlists its groups, so such a column is
+    dropped and reported rather than trained on — but not writing it is still
+    the right guard. It keeps the file to what it claims to hold, and stops
+    every MLlib run printing an "unrecognised column" warning that is really
+    just this function's own leftovers.
     """
     name = target_name if target_name is not None else y.name
     if name is None:
