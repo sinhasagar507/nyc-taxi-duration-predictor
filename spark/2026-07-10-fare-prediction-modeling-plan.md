@@ -71,6 +71,21 @@ Read the 204-file backup, apply §4 guards, derive caps from the data:
 - **Hard exclusions (§5 leakage list):** `tip_amount`, `total_amount`, `mta_tax`, `tolls_amount`, `improvement_surcharge`, `extra`, `revenue_per_mile`, `has_tip`, `tip_pct_of_fare`. `payment_type` excluded (not known pre-trip).
 - **Scaling only where needed:** build two preprocessor variants — scaled (linear/SVM/NN) and raw (trees).
 
+> **Partly superseded — 2026-08-09.** This section was written 2026-07-10, before Phase 1
+> existed, so two parts of it describe columns and a split that never shipped. The
+> *Encoding* column is still current; the rest reads as history.
+>
+> - **Column names.** The prep emits `distance_capped` and `temp_band_ord`. The raw halves
+>   named in the table — `trip_distance` and `temperature` — are model exclusions, not
+>   inputs (`d83141b`). Keeping the raw distance disabled the §2 p99 cap and let one
+>   corrupt 8,003,318-mile odometer row drive a linear fold to a $9.29M prediction.
+> - **The split.** 70/15/15 was never implemented. §4a supersedes it: a sealed 20% holdout
+>   carved before the sweep, plus 5-fold CV on the remainder (`f07eb4c`).
+>
+> Both defects came from the same habit — building on what this section asserted instead of
+> on what the prep actually emitted. Read §4a and the live column lists in
+> `src/features.py` and `src/preprocess.py` as the authority.
+
 ---
 
 ## 4. Phase 3 — Evaluation harness (build BEFORE any model)
@@ -184,31 +199,64 @@ itself is a script run, like Phase 1.
 
 **Pipeline stages** (`pyspark.ml.Pipeline`):
 1. `StringIndexer` + `OneHotEncoder` on `service_type`, `pickup_borough`, `dropoff_borough`
-2. numerics passed through raw — GBT is a tree, no scaling needed
-3. `VectorAssembler` → single `features` vector
-4. `GBTRegressor(labelCol="fare_capped", seed=42)`
+2. `StringIndexer` + `TargetEncoder` on `od_corridor`
+3. numerics passed through raw — GBT is a tree, no scaling needed
+4. `VectorAssembler` → single `features` vector
+5. `GBTRegressor(labelCol="fare_capped", seed=42)`
 
-**`od_corridor` is dropped for this baseline.** MLlib has no `TargetEncoder` and 19,953
-one-hot columns is not viable — this is the Tier-2 gap from §10 showing up in practice, and
-naming it is part of the finding, not a defect to paper over.
+**Correction — 2026-08-09: `od_corridor` stays in.** An earlier draft of this section
+dropped the corridor and justified the drop with "MLlib has no `TargetEncoder`". That is
+false for this project. `pyspark.ml.feature.TargetEncoder` was added in **Spark 4.0.0** and
+we run **4.1.2**. The claim came from Spark 3.x and was never checked against the installed
+version, so the 2026-08-08 baseline shipped without a feature it could have had. Same
+failure mode as `d83141b`: acting on a believed statement instead of a verified fact.
 
-**Fair comparison (the part that matters):** an MLlib model minus the corridor feature
-versus a sklearn model with it is not a like-for-like result. So report **three** rows:
+**Parity rule — decided 2026-08-09.** Whatever configuration the sklearn sweep runs, the
+MLlib baseline runs too. Same rows, same 15-feature contract, same encoding families. What
+is left over is the stack, and the stack is the only thing this section exists to measure.
+A gap that comes from a missing feature measures nothing anyone wants to know.
 
-| Row | Stack | Rows | `od_corridor` |
-|---|---|---|---|
-| Phase-4 champion | sklearn | 612,608 (`sample_work` train) | ✅ target-encoded |
-| Champion, corridor dropped | sklearn | 612,608 (`sample_work` train) | ❌ |
-| MLlib GBT | Spark | 612,608 (`sample_work` train) | ❌ |
+One difference survives the parity rule and cannot be removed:
 
-Row 2 vs row 3 is the honest stack comparison; row 1 vs row 2 quantifies what the
-target-encoded corridor is actually worth. Both are worth reporting. Row 2 needs a
-`--drop-corridor` flag on `01_run_sweep.py` — it does not exist yet.
+- sklearn's `TargetEncoder` **cross-fits** inside `fit_transform`, so a training row's
+  encoding is built from the other inner folds and excludes its own target.
+- Spark's `TargetEncoder` does not. `fit` takes the plain per-category mean, so a training
+  row's own fare enters its own feature.
 
-**Naming, not schema.** All three rows share the `evaluate()` key set, so the pool goes in
-the `model` string (`mllib_gbt@work612k`, `xgboost_nocorridor@work612k`) rather than a new
-column. Adding a field would break the shared-leaderboard contract that
-`test_row_keys_match_the_evaluate_contract` exists to protect.
+Both are safe against **test-fold** leakage, because the pipeline is fitted on each fold's
+train half only. Neither CV score is inflated. The Spark defect stays inside the training
+half: the model over-trusts the encoding, which biases its result **downward**, not upward.
+It is not hypothetical — 5,373 of the 18,668 corridors in the train split hold exactly one
+trip (28.8% of corridors, 0.88% of rows), and for those a plain group mean *is* the row's
+own fare. Spark's `smoothing` parameter shrinks small categories toward the global mean
+($12.69) and is the mitigation; choose the value deliberately and record it. Report the
+residual difference as a §10 Tier-2 finding — real, and far smaller than a missing feature.
+
+**The rows to report:**
+
+| Row | Stack | Rows | `od_corridor` | Status |
+|---|---|---|---|---|
+| 1. Phase-4 champion | sklearn | 612,608 (`sample_work` train) | ✅ target-encoded, cross-fitted | done — `sweep_work` |
+| 2. MLlib GBT | Spark | 612,608 (`sample_work` train) | ✅ target-encoded, smoothed | **to run** |
+| 3. MLlib GBT, corridor dropped | Spark | 612,608 (`sample_work` train) | ❌ | done — `sweep_mllib_gbt` |
+
+Row 1 against row 2 is the like-for-like stack comparison, and it is the headline. Row 3
+against row 2 quantifies what the corridor is worth inside Spark. Row 3 is already paid
+for: the 2026-08-08 run produced it before this correction, so the ablation costs nothing
+extra and the earlier run is not wasted.
+
+**The `--drop-corridor` flag is no longer required.** It existed to supply a
+corridor-dropped *sklearn* row, which was only necessary while MLlib could not hold the
+corridor. Row 3 now supplies that ablation on the Spark side. The flag stays available as
+optional work if the sklearn-side corridor value is wanted as well.
+
+**Naming, not schema.** All rows share the `evaluate()` key set, so the pool goes in the
+`model` string (`mllib_gbt@work612k`) rather than a new column. Adding a field would break
+the shared-leaderboard contract that `test_row_keys_match_the_evaluate_contract` exists to
+protect. Rows 2 and 3 differ only by a feature, so the model string must separate them —
+the 2026-08-08 board already claims `mllib_gbt@work612k` for the corridor-dropped run, and
+that run is now the ablation, not the baseline. Rename it to `mllib_gbt_nocorr@work612k`
+when row 2 lands, so the unqualified name means the full-feature baseline.
 
 **Metrics + folds:** `RegressionEvaluator` for mae/rmse/r2 — the same three metrics — with
 **the same k (5) and the same train pool as `make_cv()`, but different fold membership.**
@@ -218,12 +266,19 @@ noise rather than a confound — but it is not the equivalence an earlier draft 
 section claimed. Results adapt into the existing `leaderboard()` as ordinary rows, so
 everything still lands in one table.
 
-**Expected outcome, stated up front:** the MLlib GBT lands close to but behind the sklearn
-boosting champion — mostly from the missing corridor feature and MLlib's weaker GBT
-implementation — and costs materially more wall time for the same 612,608 rows, because
-Spark's scheduling and shuffle overhead buys nothing at a size that fits in memory.
-Confirming *that* is the point locally: it establishes the per-row cost of each stack
-cleanly, and §5c is where the scale argument gets made instead.
+**Expected outcome, stated up front:** with the corridor present on both sides, the MLlib
+GBT lands close to but behind the sklearn boosting champion — from MLlib's weaker GBT
+implementation and its uncross-fitted encoder, no longer from a missing feature — and costs
+materially more wall time for the same 612,608 rows, because Spark's scheduling and shuffle
+overhead buys nothing at a size that fits in memory. Confirming *that* is the point locally:
+it establishes the per-row cost of each stack cleanly, and §5c is where the scale argument
+gets made instead.
+
+The wall-time half is already measured. The 2026-08-08 run (row 3) took **51.4s per fold**
+against lightgbm's **1.0s** on identical rows — a 50x gap. Row 2 adds an encoder stage, so
+expect it slightly higher. The accuracy half is what row 2 exists to settle: row 3 scored
+MAE $0.483 against the champion's $0.350, and that gap is still confounded by the missing
+corridor.
 
 ---
 
@@ -439,11 +494,17 @@ now would churn Docker mounts and import paths for cosmetics — not worth it.
       `--no-holdout`. 208 unit tests green.
       **Known, untouched:** design matrix is rank 25/27 (full one-hot + intercept =
       dummy trap, cond ≈ 4e15); coefficients unstable across folds. Separate defect.
-- [~] Phase 4b: Spark MLlib GBT baseline (§5b) — pure helpers `spark/ml/src/mllib.py` +
-      `tests/unit/ml/test_mllib.py` written TDD (19 tests green, uncommitted as of
-      2026-08-04). `01_mllib_baseline.py` not written yet.
-      **Run target revised 2026-08-04:** locally on the `sample_work` train split
-      (612,608 rows — the sweep's own rows), **not** `sample_full`.
+- [~] Phase 4b: Spark MLlib GBT baseline (§5b) — helpers `spark/ml/src/mllib.py` +
+      `tests/unit/ml/test_mllib.py` (28 tests) and the script `01_mllib_baseline.py` are
+      committed (`3fe9d78`). **First run done 2026-08-08** on the `sample_work` train split
+      (612,608 rows — the sweep's own rows), 5 folds, GBT maxIter=100 maxDepth=5:
+      MAE $0.483 / RMSE 1.258 / R² .9833, 51.4s per fold against lightgbm's 1.0s.
+      **That run is row 3, not the baseline** — it dropped `od_corridor` on a premise the
+      2026-08-09 correction in §5b overturned. It stands as the corridor ablation.
+      **Remaining:** row 2 — add `StringIndexer` + `TargetEncoder` on `od_corridor` to the
+      pipeline (TDD on `src/mllib.py` first, `MLLIB_EXCLUDED_COLUMNS` no longer holds the
+      corridor), pick and record a `smoothing` value, rerun under a distinct tag, and
+      rename the 2026-08-08 row to `mllib_gbt_nocorr@work612k`.
 - [ ] **Cloud full-scale run (§5c, decided 2026-08-04).** `sample_full` (12.75M) for
       **both** sklearn and MLlib. Local machine measured at 4.8 GB frame / ~8.2 h for the
       whole sweep on an 18 GiB M3 Pro; scope the cloud run to the top 4 + corridor-dropped
