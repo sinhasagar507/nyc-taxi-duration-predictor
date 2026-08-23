@@ -36,64 +36,32 @@ because it was incidental to the main edit.
 
 If a turn changed nothing, say so — silence is not the same as "no changes".
 
-## Project: NYC Taxi Duration Prediction
+## Project: NYC Taxi Fare Prediction
 
-End-to-end data engineering pipeline (DataTalksClub DE Zoomcamp) that predicts NYC
-taxi trip duration. Intended flow:
+End-to-end data engineering pipeline (DataTalksClub DE Zoomcamp): TLC trip data → GCS →
+BigQuery external tables → dbt marts → fare model (`spark/ml/`) + Looker Studio.
+The modeling target is **fare** (`fare_capped`), locked (D-001). The repository folder name
+still says "duration" and stays that way; the README carries a note explaining the pivot.
+`CASE_STUDY.md` still predates it — see D-005 and audit item 4.
 
-```
-TLC source data → GCS (raw) → BigQuery external tables → dbt (ELT)
-   → fact/dim tables → PySpark duration model + Looker Studio analytics
-```
+## GCP — retired account, working locally
 
-## GCP Infrastructure — reference only (account retired, working locally)
+The original GCP project is **retired** (trial exhausted / account disabled). Treat no
+GCP resource as live; expect no credentials. Marts were backed up locally and to GCS
+before shutdown. Supply your own keyfile via `GOOGLE_APPLICATION_CREDENTIALS` if
+reconnecting. Bucket/dataset layout reference: **`notes/gcp-reference.md`**.
 
-> The GCP project this pipeline originally ran against has been **retired** (trial
-> exhausted / account disabled). **Do not treat any GCP resource below as live**, and
-> do not expect credentials to be present. Work is **local for now**; the marts were
-> backed up locally and to GCS before shutdown. The identifiers (project ID, service
-> account, keyfile) have been removed on purpose — supply your own via
-> `GOOGLE_APPLICATION_CREDENTIALS` if/when you reconnect to a live project. The layout
-> below is retained only as a structural reference for the data model.
+The dbt project is a **git submodule** at `dbt/ny_taxi_analytics` (remote:
+github.com/sinhasagar507/ny_taxi_analytics, authoritative — the submodule pins a commit).
+Verified stack: dbt-core 1.11 + dbt-bigquery 1.11 on Python 3.12.
 
-- **GCS bucket layout (reference):** `primary-data-dtc` (location US)
-  - `nyc_taxi_data/yellow_taxi_data/` — 24 parquet files (2015-01 … 2016-12)
-  - `nyc_taxi_data/green_taxi_data/`  — 24 parquet files (2015-01 … 2016-12)
-  - `nyc_taxi_data/taxi_lookup_data/taxi_zone_lookup.csv`
-  - `nyc_climate_data/climate_data.parquet`
-- **BigQuery datasets (reference):**
-  - `nyc_taxi_data` — `yellow_taxi_external_table`, `green_taxi_external_table` (EXTERNAL).
-    `taxi_zone_external_table` was never created (CSV is in GCS, no table over it).
-  - `nyc_climate_data` — `climate_external_table` (EXTERNAL)
-  - `dbt_prod` — prod dbt target: `fact_trips`, `dim_zones`,
-    `dim_monthly_zones_revenue`, `taxi_zone_lookup`, + staging views
-  - `dbt_ssinha` — dev dbt target (mirror of prod)
+## Directory layout
 
-- dbt project is vendored as a **git submodule** at `dbt/ny_taxi_analytics`
-  (remote: github.com/sinhasagar507/ny_taxi_analytics; remote stays authoritative — the
-  submodule just pins a commit). It runs via **dbt Core** locally: Airflow's
-  `dbt_build_marts` DAG runs `dbt build` from an isolated venv, and GitHub Actions
-  (`.github/workflows/dbt.yml`) validates on PR / builds on main. Verified stack:
-  dbt-core 1.11 + dbt-bigquery 1.11 on Python 3.12.
-
-## Target Directory Structure (refactor goal)
-
-```
-nyc_taxi_durationprediction/
-├── terraform/        # infra (reconcile vars with live resources; import before apply)
-├── airflow/          # orchestration: dags/, docker-compose.yaml, dockerfile
-├── dbt/
-│   ├── ny_taxi_analytics/   # git submodule → github.com/sinhasagar507/ny_taxi_analytics
-│   ├── profiles.yml         # BigQuery profile (env-var keyfile; dev/ci/prod targets)
-│   └── requirements.txt     # dbt-bigquery==1.11.1 (local + CI + Airflow image)
-├── .github/workflows/dbt.yml  # CI/CD: dbt compile on PR, dbt build on main
-├── docker/dev/       # whole-repo dev container (ML libs, pytest, dbt CLI, JupyterLab)
-├── spark/            # batch processing + ML notebooks (was 05_batch_processing/)
-├── bigquery/         # SQL reference queries
-├── tests/            # project-wide test suite (see ## Testing below)
-├── secrets/          # service-account keys (gitignored)
-└── notes/            # course notes / documentation
-```
+The Phase-3 restructure is done. Top level: `terraform/` (infra — import before apply),
+`airflow/` (DAGs + compose stack), `dbt/` (submodule + profiles.yml + requirements),
+`docker/dev/` (dev container), `spark/` (batch + ML, `spark/ml/` is the fare model),
+`bigquery/` (SQL reference), `tests/`, `secrets/` (gitignored), `notes/` (docs),
+`.github/workflows/dbt.yml` (CI).
 
 **Artifacts to retire** (learning leftovers, not pipeline components):
 `03_data_warehouse_bigquery/`, `04_analytics_engineering/`, `docker_nana_tutorial/`,
@@ -129,9 +97,6 @@ Three environments with non-overlapping jobs. Two Docker stacks; they are never 
   Invoke it explicitly — never rely on shell activation, never use system python/pip,
   don't create additional venvs. It deliberately lacks xgboost/lightgbm/catboost; tests
   needing them use `pytest.importorskip` and skip cleanly here.
-- **Superseded 2026-07-28:** the earlier Airflow-only Docker rule, which kept the
-  test/ML/dbt developer workflows on the host. Development now follows the Docker-first
-  policy; the host venv remains a convenience path, not the source of truth.
 
 ### Deployment split (target: GCP, single GCE VM running the compose stack)
 
@@ -173,92 +138,36 @@ and run in the container.
 | **dbt** | credentials + dbt Core | `dbt compile --project-dir dbt/ny_taxi_analytics --profiles-dir dbt` | Phase 1 |
 | **E2E** | `docker compose up` | trigger DAGs in Airflow UI, check task states | Phase 1, Phase 4 |
 
-### Structure
-
-```
-tests/
-├── conftest.py                     # constants, auto-skip integration without creds
-├── unit/
-│   └── dags/
-│       ├── test_dag_integrity.py   # all 9 DAG files exist + parse as valid Python
-│       └── test_dag_config.py      # no stale IDs, env var usage, DAG chaining
-└── integration/
-    ├── test_gcs.py                 # bucket reachable, file counts per prefix
-    ├── test_bigquery.py            # datasets + external tables exist + queryable
-    └── test_dbt.py                 # dbt compile returns 0
-```
-
-### Quick-run reference
-
-```bash
-# Unit only (no credentials needed)
-pytest tests/unit/ -v
-
-# Integration (reads creds from secrets/ automatically)
-pytest tests/integration/ -v
-
-# Everything — integration auto-skips gracefully if no creds
-pytest tests/ -v
-
-# dbt compile (supply your own keyfile if reconnecting to a live GCP project)
-GOOGLE_APPLICATION_CREDENTIALS=secrets/<your-keyfile>.json \
-  dbt compile --project-dir dbt/ny_taxi_analytics --profiles-dir dbt
-
-# E2E smoke test (manual)
-docker compose -f airflow/docker-compose.yaml up --build -d
-# → open localhost:8080, trigger nyc_taxi_gcs_yellow_dag, watch task states
-```
-
-Note: `airflow/tests/` contains legacy TDD stubs that require Airflow installed locally
-(not the Docker image). They are not part of the standard test run; treat them as
-documentation of expected DAG behaviour until they are migrated.
+Test layout + E2E smoke steps: `notes/gcp-reference.md`. `airflow/tests/` holds legacy
+TDD stubs needing local Airflow — not part of the standard run; treat as documentation.
 
 ## Development Plan — sequenced for safety
 
 Each phase ends with a test-suite verification gate and its own commit. Do not mix phases.
 
-- **✅ Phase 0 — Checkpoint.** Branch off `main`; committed current state. `.gitignore`
-  covers `secrets/`, `.venv/`, `google-cloud-sdk/`, local data dumps.
+Phases 0–4 are **done** (each verified `pytest tests/` green); full detail in
+`notes/gcp-reference.md`:
 
-- **✅ Phase 1 — Reconcile config with live infra.** All stale project/bucket IDs fixed.
-  Green ingest DAG created; climate path bug fixed; zone ingest DAG created; all 4
-  external-table DAGs migrated to env vars; ingest DAGs chained to external-table DAGs
-  via `TriggerDagRunOperator`; dbt submodule + dbt Core Airflow DAG + CI/CD wired;
-  PySpark pointed at `dbt_prod`.
-  *Verify:* `pytest tests/` green; `dbt compile` clean; `docker compose up --build`
-  succeeds; all DAGs load in Airflow UI without import errors.
+- ✅ Phase 0 — checkpoint branch + `.gitignore` hardening.
+- ✅ Phase 1 — config reconciled with live infra; DAGs chained; dbt + CI/CD wired.
+- ✅ Phase 2 — pruned unreferenced learning artifacts.
+- ✅ Phase 3 — restructure: `05_batch_processing/` → `spark/`, mechanical moves only.
+- ✅ Phase 4 — DRY'd config to env vars; stable credentials path; parametrized ingest window.
+- ⏳ Phase 5 — document: reconcile this file + README to the final structure and the
+  retired-account reality. *Done so far:* docs reconciled; branch pushed to origin.
 
-- **✅ Phase 2 — Prune redundancy (isolated, reversible).** Removed truly-unreferenced
-  learning-exercise artifacts (legacy BQ homework, experimental notebooks,
-  `docker_nana_tutorial`). *Verified:* `pytest tests/` green.
+## Current work + the Decision Register
 
-- **✅ Phase 3 — Restructure (mechanical moves only).** Renamed `05_batch_processing/` →
-  `spark/` and moved files into the target layout; import paths, Docker volume mounts, and
-  dbt project paths updated. No behavioral changes. *Verified:* `pytest tests/` green.
+**Open work** lives in `notes/2026-08-22-repo-audit.md` — 12 items from the 2026-08-22
+audit, with the attack order. Read it before starting new work; check items off there.
 
-- **✅ Phase 4 — Refactor & harden (behavioral).** DRY'd config to a single source
-  (`GCP_PROJECT_ID` / `GCP_GCS_BUCKET`); decoupled credentials from the project-specific
-  keyfile name (stable path `secrets/gcp-credentials.json`, guard test); parametrized the
-  ingest window via `INGEST_START_DATE` / `INGEST_END_DATE`. *Verified:* `pytest tests/` green.
-
-- **⏳ Phase 5 — Document (in progress).** Reconcile this file + README to the final
-  structure and retired-account reality. *Done:* docs reconciled; branch
-  `refactor/wire-pipeline` pushed to origin.
-
-## Deferred — do not action without an explicit ask
-
-These are parked on purpose. Do not treat them as the next step, do not raise them as
-blockers, and do not start them opportunistically while doing adjacent work.
-
-- **Open the PR into `main`.** The repository owner opens it themselves, on their own
-  timing. Nothing in the development plan gates on it — Phase 4 of the fare model and all
-  other work proceed on `refactor/wire-pipeline` regardless. Compare link when the owner
-  wants it: `https://github.com/sinhasagar507/taxi-fare-prediction/compare/main...refactor/wire-pipeline`
-- **Move `project_architecture/` → `notes/`.** Listed under "Artifacts to retire" above;
-  still at the repo top level. Deferred, not forgotten.
-- **Fix the `pytest.ini` section header** (`[tool:pytest]` → `[pytest]`). Deliberately
-  held back as its own change so that `testpaths`, `--strict-markers`, and
-  `filterwarnings` taking effect for the first time is not tangled into unrelated work.
+**Settled and parked decisions** live in `notes/decisions.md`, each with its reason.
+**Enforce it.** When the user proposes anything that contradicts a **LOCKED** entry, or
+starts a **DEFERRED** item without an explicit ask, **stop before acting** — even
+mid-task. Quote that entry's Decision and Why, then ask one question: "Reopen D-NNN?"
+Proceed only on the explicit words "reopen D-NNN" plus a new reason, and record the
+reopening in the entry. A repeated thought is not a new reason. Never raise a DEFERRED
+item as a blocker or a next step.
 
 ## Commit Conventions
 

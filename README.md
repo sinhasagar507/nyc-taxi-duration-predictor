@@ -1,6 +1,9 @@
-# NYC Taxi Trip Duration Prediction
+# NYC Taxi Fare Prediction
 
-End-to-end data engineering pipeline built as part of the [DataTalksClub Data Engineering Zoomcamp](https://github.com/DataTalksClub/data-engineering-zoomcamp). The pipeline ingests NYC Taxi and Limousine Commission (TLC) trip records and daily climate data, transforms them through a dbt ELT layer, and surfaces analytical insights via a Looker Studio dashboard and a PySpark ML model.
+End-to-end data engineering pipeline built as part of the [DataTalksClub Data Engineering Zoomcamp](https://github.com/DataTalksClub/data-engineering-zoomcamp). The pipeline ingests NYC Taxi and Limousine Commission (TLC) trip records and daily climate data, transforms them through a dbt ELT layer, and surfaces analytical insights via a Looker Studio dashboard and an ML model that predicts the trip fare (`fare_capped`). The model lives in `spark/ml/` (scikit-learn sweep + Spark MLlib baseline); its design and phase log live in `spark/2026-07-10-fare-prediction-modeling-plan.md`.
+
+> The project began as a trip-*duration* predictor and was reoriented to fare prediction;
+> the repository folder name (`nyc_taxi_durationprediction`) predates the pivot.
 
 ---
 
@@ -22,7 +25,7 @@ TLC source data (2015-2016)
   fact_trips + dim tables  <-- dbt_prod dataset
         |
         +---> Looker Studio dashboard
-        +---> PySpark duration prediction model
+        +---> Fare prediction model (spark/ml/)
 ```
 
 ---
@@ -72,10 +75,10 @@ nyc_taxi_durationprediction/
 │   ├── Dockerfile
 │   ├── docker-compose.yml
 │   └── requirements-dev.txt
-├── spark/                          # PySpark notebooks and scripts
-│   ├── nyc_taxi_duration_prediction.ipynb
-│   ├── pyspark_bigquery_hybrid.py
-│   └── local_spark/
+├── spark/                          # Batch processing + ML
+│   ├── ml/                         # Fare model: prep, features, sweep, MLlib baseline
+│   ├── 2026-07-10-fare-prediction-modeling-plan.md
+│   └── pyspark_bigquery_hybrid.py  # (+ legacy course notebooks)
 ├── terraform/                      # Infrastructure as code (reference only)
 ├── bigquery/                       # SQL reference queries
 ├── tests/                          # Project-wide test suite
