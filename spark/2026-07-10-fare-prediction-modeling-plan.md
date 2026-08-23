@@ -223,14 +223,40 @@ One difference survives the parity rule and cannot be removed:
 - Spark's `TargetEncoder` does not. `fit` takes the plain per-category mean, so a training
   row's own fare enters its own feature.
 
-Both are safe against **test-fold** leakage, because the pipeline is fitted on each fold's
-train half only. Neither CV score is inflated. The Spark defect stays inside the training
-half: the model over-trusts the encoding, which biases its result **downward**, not upward.
-It is not hypothetical — 5,373 of the 18,668 corridors in the train split hold exactly one
-trip (28.8% of corridors, 0.88% of rows), and for those a plain group mean *is* the row's
-own fare. Spark's `smoothing` parameter shrinks small categories toward the global mean
-($12.69) and is the mitigation; choose the value deliberately and record it. Report the
+**The sklearn half is measured, not assumed — 2026-08-09.** This section has now cost the
+project twice by asserting library behaviour it never checked, so the claim was tested on
+the real `build_preprocessor`. Worst case, 12 rows, every corridor unique, targets 10–21,
+global mean 15.5. `pre.fit_transform(X, y)` returned values near 15.5 with the row's own
+target excluded; `pre.fit(X, y).transform(X)` returned 10, 11, 12 … — the target itself. A
+spy transformer inserted between `pre` and the model inside a real `Pipeline` confirmed the
+model receives the cross-fitted values, so `Pipeline.fit` does take the `fit_transform`
+path. sklearn 1.7.1. Three conditions hold together: the encoder sits inside the
+`Pipeline`, `cross_validate` refits it per fold, and `make_holdout` runs before the sweep.
+Had any one failed, every sklearn score in `sweep_work.json` would be inflated.
+
+Both stacks are safe against **test-fold** leakage, because the pipeline is fitted on each
+fold's train half only. Neither CV score is inflated. The Spark defect stays inside the
+training half: the model over-trusts the encoding, which biases its result **downward**, not
+upward. It is not hypothetical — 5,373 of the 18,668 corridors in the train split hold
+exactly one trip (28.8% of corridors, 0.88% of rows), and for those a plain group mean *is*
+the row's own fare. Spark's `smoothing` parameter shrinks small categories toward the global
+mean ($12.69) and is the mitigation; choose the value deliberately and record it. Report the
 residual difference as a §10 Tier-2 finding — real, and far smaller than a missing feature.
+
+**Unknown categories agree across the stacks — one fewer difference to report.** Spark's
+`TargetEncoder` with `handleInvalid="keep"` maps an unseen value to the dataset overall
+statistics. sklearn's maps it to the global target mean. Same fallback, so no adjustment is
+needed for parity. This path is live rather than theoretical: `make_cv` is a plain
+`KFold(shuffle=True, seed=42)` and is **not** stratified, and no split stratifies on
+`od_corridor` — with 5,373 single-trip corridors, none could. Measured over the 612,608
+train rows, **1.03%–1.10% of every CV test fold** carries a corridor absent from that fold's
+train half (6,491 rows across the five folds, stable fold to fold). Those rows fall back to
+the global mean and lean on `distance_capped` and `trip_duration_min` instead. That is the
+production case — a route with no history — priced into the CV score at its true rate.
+
+The `OneHotEncoder` mismatch does remain: Spark's `handleInvalid="keep"` gives an unseen
+category its own bucket, sklearn's `handle_unknown="ignore"` gives all zeros. It should
+never fire, because boroughs and `service_type` are closed sets from the zone lookup.
 
 **The rows to report:**
 
