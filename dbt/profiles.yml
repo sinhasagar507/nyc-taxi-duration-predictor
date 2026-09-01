@@ -18,7 +18,7 @@ default:
     dev:
       type: bigquery
       method: service-account
-      project: "{{ env_var('GCP_PROJECT_ID', 'dtc-de-project-492321') }}"
+      project: "{{ env_var('GCP_PROJECT_ID', 'dtc-de-project-506916') }}"
       dataset: dbt_dev
       location: US
       threads: 4
@@ -27,7 +27,7 @@ default:
     ci:
       type: bigquery
       method: service-account
-      project: "{{ env_var('GCP_PROJECT_ID', 'dtc-de-project-492321') }}"
+      project: "{{ env_var('GCP_PROJECT_ID', 'dtc-de-project-506916') }}"
       dataset: dbt_ci
       location: US
       threads: 4
@@ -36,7 +36,7 @@ default:
     prod:
       type: bigquery
       method: service-account
-      project: "{{ env_var('GCP_PROJECT_ID', 'dtc-de-project-492321') }}"
+      project: "{{ env_var('GCP_PROJECT_ID', 'dtc-de-project-506916') }}"
       dataset: dbt_prod
       location: US
       threads: 4

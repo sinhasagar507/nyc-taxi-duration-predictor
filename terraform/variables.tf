@@ -6,7 +6,7 @@ variable "credentials" {
 
 variable "project" {
   description = "GCP project ID (override via TF_VAR_project / GCP_PROJECT_ID on account swap)"
-  default     = "dtc-de-project-492321"
+  default     = "dtc-de-project-506916"
 }
 
 variable "region" {
@@ -30,7 +30,7 @@ variable "bq_dataset_name" {
 variable "gcs_bucket_name" {
   description = "My Storage Bucket Name"
   #Update the below to a unique bucket name
-  default = "primary-data-dtc"
+  default = "primary-data-dtc-506916"
 }
 
 variable "gcs_storage_class" {

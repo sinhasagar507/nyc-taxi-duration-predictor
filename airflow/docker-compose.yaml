@@ -66,8 +66,8 @@ x-airflow-common:
     _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:-}
     GOOGLE_APPLICATION_CREDENTIALS: /.google/credentials/google_credentials.json
     AIRFLOW_CONN_GOOGLE_CLOUD_DEFAULT: 'google-cloud-platform://?extra__google_cloud_platform__key_path=/.google/credentials/google_credentials.json'
-    GCP_PROJECT_ID: 'dtc-de-project-492321'
-    GCP_GCS_BUCKET: 'primary-data-dtc'
+    GCP_PROJECT_ID: 'dtc-de-project-506916'
+    GCP_GCS_BUCKET: 'primary-data-dtc-506916'
     # Ingest backfill window (single source of truth; DAGs read via os.environ)
     INGEST_START_DATE: '2015-01-01'
     INGEST_END_DATE: '2016-12-31'

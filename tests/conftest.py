@@ -6,8 +6,8 @@ PROJECT_ROOT = Path(__file__).parent.parent
 
 # Single source of truth for project/bucket = environment (see repo-root .env).
 # Defaults keep the suite working against the current live project when no env is set.
-GCP_PROJECT = os.environ.get("GCP_PROJECT_ID", "dtc-de-project-492321")
-GCS_BUCKET = os.environ.get("GCP_GCS_BUCKET", "primary-data-dtc")
+GCP_PROJECT = os.environ.get("GCP_PROJECT_ID", "dtc-de-project-506916")
+GCS_BUCKET = os.environ.get("GCP_GCS_BUCKET", "primary-data-dtc-506916")
 BQ_TAXI_DATASET = "nyc_taxi_data"
 BQ_CLIMATE_DATASET = "nyc_climate_data"
 BQ_DBT_PROD_DATASET = "dbt_prod"

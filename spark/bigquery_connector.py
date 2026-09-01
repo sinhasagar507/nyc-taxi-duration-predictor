@@ -225,7 +225,7 @@ if __name__ == "__main__":
     
     # GCP project details — single source of truth is the GCP_PROJECT_ID env var
     # (repo-root .env); default keeps the current project working with no config.
-    PROJECT_ID = os.environ.get("GCP_PROJECT_ID", "dtc-de-project-492321")
+    PROJECT_ID = os.environ.get("GCP_PROJECT_ID", "dtc-de-project-506916")
     DATASET_ID = os.environ.get("GCP_DBT_DATASET", "dbt_prod")
     
     print("\n=== Example 1: Loading simple table ===")
