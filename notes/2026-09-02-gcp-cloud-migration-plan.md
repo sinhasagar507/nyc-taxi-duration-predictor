@@ -284,6 +284,51 @@ was ~$0.002. Inside fold noise → the version decision is closed with evidence 
 right, and the custom-image option reopens with a reason. Cost: one container build and
 ~17 minutes of laptop time.
 
+**RESULT — 2026-09-02: the two versions are bit-identical. Decision 2 closes on (a).**
+The recorded baseline ran on the *host* (Python 3.13.2, macOS), so 4.0.1 in a container
+against that record alone would have moved the Spark version and the environment together.
+So 4.1.2 ran in the same container as the control, and the version became the only
+variable. Two throwaway images off one base, differing by a single `pip install`; the
+repository mounted read-only with the results directory overmounted, so no file in the tree
+changed. Phase 4b row 2 exactly: 612,608 rows, 5 folds, seed 42, `maxIter=100`,
+`maxDepth=5`, smoothing 5, `--cores 8`.
+
+| Run | Spark | Python | `mae_mean` | `rmse_mean` | `r2_mean` | s/fold |
+|---|---|---|---|---|---|---|
+| recorded baseline (host) | 4.1.2 | 3.13.2 | 0.5201744916052814 | 1.4501613318146291 | 0.977753809523173 | 170.5 |
+| parity (container) | **4.0.1** | 3.12.13 | 0.5201744916052814 | 1.4501613318146291 | 0.977753809523173 | 173.9 |
+| control (container) | 4.1.2 | 3.12.13 | 0.5201744916052814 | 1.4501613318146291 | 0.977753809523173 | 192.0 |
+
+Every metric agrees to full float64 precision, and so does every standard deviation. The
+five per-fold figures agree individually too, not only in the mean — 0.5184, 0.5226,
+0.5165, 0.5287, 0.5147. There is no difference to compare against the ~$0.002 fold noise
+floor, which is a stronger result than the acceptance condition asked for.
+
+The obvious objections, tested rather than assumed (D-009): the metadata records
+`"spark": "4.0.1"` on `Linux-6.10.14-linuxkit-aarch64`, so the run used the pinned version;
+the results directory was an empty overmount and the repository was read-only, so nothing
+was read back from the old files; and mean *and* standard deviation matching across five
+folds requires the fold assignment to have matched, which `--cores 8` fixes by pinning
+`defaultParallelism` and therefore the read partitioning.
+
+**Two 4.1.2 behaviours re-measured on 4.0.1, both unchanged.** `TargetEncoder` exists in
+4.0.1 (Fact 1 confirmed by measurement, not by the release note). Its `targetType` still
+defaults to `"binary"`, so the explicit `"continuous"` stays mandatory. `TargetEncoderModel`
+still copies the indexer's nominal `ml_attr` metadata onto its output, and `* 1.0` still
+clears it, so the demoting `SQLTransformer` stays mandatory. Neither is a 4.1-only quirk.
+
+**Timing is NOT a version finding — recorded as UNVERIFIED.** The container ran 4.0.1 at
+173.9 s/fold and 4.1.2 at 192.0 s/fold, but 4.1.2 ran second, after seventeen minutes of
+sustained load on a laptop, and its fold 2 alone took 211.7 s. Run order and thermal state
+are not separated by a single ordering, so the 10% gap buys nothing. Only the metrics close
+the decision.
+
+**Consequence, pre-registered above and now applied:** `spark/ml/requirements.txt` moves to
+`pyspark==4.0.1`. Four statements that read "we run 4.1.2" were corrected with it, in
+`src/mllib.py`, `01_mllib_baseline.py`, `tests/unit/ml/test_mllib.py` and the modeling
+plan — a stale present-tense claim beside a changed pin is the exact failure D-009 exists
+to prevent. Cost: $0, about 40 minutes of laptop time.
+
 ### 2.5 Model training — no Vertex AI
 
 **Why not.** The fare model is a persisted estimator in `spark/ml/models/`, served by
@@ -388,14 +433,26 @@ config that a test can pin, the failing test lands first.
 - [ ] Remove the three tfstate files from the index (`git rm --cached`), add
       `terraform/*.tfstate*` and `terraform/.terraform/` to `.gitignore`. Keep the files on
       disk until M1 confirms the fresh state, then delete.
-- [ ] Rewrite `terraform/main.tf` per 2.6; keep `variables.tf` defaults. `terraform
-      validate` only — no `init` against a backend yet.
+- [x] Rewrite `terraform/main.tf` per 2.6; keep `variables.tf` defaults. `terraform
+      validate` only — no `init` against a backend yet. **Done `0b6421c`:** the bucket plus
+      the five datasets, `demo_dataset` gone, `variables.tf` untouched (`var.bq_dataset_name`
+      is now unreferenced, left deliberately). `terraform init -backend=false` +
+      `terraform validate` → Success; no plan, no apply. The provider lock file is committed
+      with darwin_arm64 *and* linux_amd64 hashes so `init` also works on the M1 VM.
 - [ ] **Upstream** in `ny_taxi_analytics`: **delete** the `database:` line from both
       staging schema files — *corrected 2026-09-02, see the note below;* the `fact_trips` partition/cluster config (2.2) after
       reading its current block. Merge there, then bump the submodule pointer here.
-- [ ] Update `.github/workflows/dbt.yml` to export `GCP_PROJECT_ID` if it does not already.
-- [ ] The Spark 4.0.1 parity test from 2.4 (throwaway container build; no file in the tree
-      changes unless the result says so).
+- [x] Update `.github/workflows/dbt.yml` to export `GCP_PROJECT_ID` if it does not already.
+      **Done `c091af8`:** it did not, so every CI run silently targeted the dead fallback
+      project. The auth step now resolves it — `vars.GCP_PROJECT_ID` first, else the
+      `project_id` inside `GCP_SA_KEY` itself, else a hard error — and exports it through
+      `$GITHUB_ENV`. Empty is never exported: dbt's `env_var()` returns `""` rather than its
+      default when the name is set. Unverified end to end; that needs M1's live project.
+- [x] The Spark 4.0.1 parity test from 2.4 (throwaway container build; no file in the tree
+      changes unless the result says so). **Done 2026-09-02: bit-identical.** Full numbers,
+      method and objections in 2.4. The result said so, so the pre-registered consequence
+      applied: `spark/ml/requirements.txt` → `pyspark==4.0.1`, plus the four "we run 4.1.2"
+      statements it makes stale. Open decision 2 is taken; **D-011** records it.
 - **Gate:** `pytest tests/` — unit count up by the new guards, all green; the 9 integration
   failures unchanged. **Rollback:** `git checkout` — nothing outside the repo moved.
 - **Cost:** $0.
@@ -794,11 +851,13 @@ Each with options and a recommendation. None is taken by this document.
    no target; (c) archive the GCP half as reference — the repository's portfolio claim
    becomes "designed", not "ran". **Recommend (a).** Settles D-006 as *keep*.
 
-2. **Spark version on the cloud.** *Options:* (a) Serverless runtime 3.0, Spark 4.0.1,
-   `requirements.txt` moved to 4.0.1 after the parity test; (b) custom image with 4.1.2;
-   (c) GCE VM with the local install. **Recommend (a)**, conditional on the M0 parity test
-   landing inside fold noise; (b) only with a measured reason from that test; (c) never,
-   on credit exposure.
+2. **Spark version on the cloud. TAKEN — (a), 2026-09-02.** *Options were:* (a)
+   Serverless runtime 3.0, Spark 4.0.1, `requirements.txt` moved to 4.0.1 after the parity
+   test; (b) custom image with 4.1.2; (c) GCE VM with the local install. The M0 parity test
+   (2.4) measured 4.0.1 and 4.1.2 **bit-identical** on Phase 4b row 2 — every metric and
+   every standard deviation equal to full float64 precision, per fold as well as in the
+   mean. (a) is taken and `requirements.txt` is on 4.0.1. (b) needed a measured reason from
+   that test and has none. (c) stays rejected on credit exposure. Recorded as **D-011**.
 
 3. **Where the sklearn half of §5c runs.** *Options:* (a) the laptop after the
    category-dtype enabler, model by model (`--only`), `stacking` overnight; (b) a
@@ -837,8 +896,12 @@ Each with options and a recommendation. None is taken by this document.
 
 - [ ] Plan reviewed by Sagar
 - [ ] Decisions 1–8 taken; D-006 closed; D2 successor entry added to `notes/decisions.md`
-- [ ] M0 — hygiene (tests first; tfstate out of git; `main.tf` rewrite; submodule fix
-      upstream + pointer bump; Spark 4.0.1 parity test)
+- [~] M0 — hygiene (tests first; tfstate out of git; `main.tf` rewrite; submodule fix
+      upstream + pointer bump; Spark 4.0.1 parity test). All done **except the submodule
+      fix**, which needs a push to `ny_taxi_analytics` that only the owner makes. The two
+      guards in `tests/unit/test_stale_ids.py` stay `xfail(strict=True)` until the pointer
+      bumps; the moment it does they fail hard, and that failure is the instruction to
+      delete the marker.
 - [ ] M1 — provision via Terraform; budget alerts first
 - [ ] M2 — DAGs proven from the laptop; archive fingerprint recorded
 - [ ] M3 — `dbt_prod` rebuilt; `COUNT(*) = 128,781,646` checked; 0 integration failures

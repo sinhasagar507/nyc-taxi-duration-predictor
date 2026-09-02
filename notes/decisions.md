@@ -147,3 +147,34 @@ Status. The Why is the important field — it is what a future session quotes ba
 - **Reopen if:** the index stops being maintained, at which point the mechanism has failed
   and something simpler should replace it.
 - **Status:** LOCKED (2026-09-02)
+
+## D-011 — Spark is pinned to the cloud runtime's version, 4.0.1, on measured parity
+
+- **Decision:** `spark/ml/requirements.txt` pins `pyspark==4.0.1`, the version Dataproc
+  Serverless runtime 3.0 ships. The pin tracks the **cloud runtime**, not the newest
+  release, so a local run reproduces what the cloud will execute. A custom Dataproc image
+  carrying 4.1.2 is rejected, and a GCE VM running Spark is rejected. This takes open
+  decision 2 of the GCP cloud migration plan.
+- **Why:** measured, not argued. The migration plan 2.4 re-ran the Phase 4b row 2
+  configuration — 612,608 rows, 5 folds, seed 42, `maxIter=100`, `maxDepth=5`, smoothing 5
+  — on both versions and got **bit-identical** results: `mae_mean` 0.5201744916052814,
+  `rmse_mean` 1.4501613318146291, `r2_mean` 0.977753809523173, every standard deviation
+  equal too, and the five per-fold figures equal individually. The acceptance condition was
+  "inside the ~$0.002 fold noise floor"; there is no difference at all to place inside it.
+  - The recorded baseline ran on the host, so the control ran 4.1.2 **in the same
+    container** as 4.0.1. Without it, one comparison would have moved the Spark version and
+    the environment together and proved nothing about either.
+  - The 4.1.2-only worry was specific and was tested directly: `targetType` still defaults
+    to `"binary"` on 4.0.1, and `TargetEncoderModel` still copies nominal `ml_attr`
+    metadata that `* 1.0` clears. Both guards in `01_mllib_baseline.py` stay mandatory.
+  - A custom image buys a version nothing depends on, and costs a build on the
+    Apple-silicon/amd64 boundary. A VM bills while it *exists*; Serverless bills per second
+    and scales to zero, which is the whole argument on a fixed credit.
+- **How to apply:** bump this pin only to follow the runtime, and re-run the 2.4 parity
+  test when you do. Timing is **not** evidence here: the two container runs differed by 10%
+  in seconds per fold, but the control ran second on a warm laptop, so run order and
+  thermal state are not separated and the gap is UNVERIFIED. Metrics closed this, not
+  seconds.
+- **Reopen if:** Dataproc Serverless moves its default runtime, or a model the project
+  actually uses needs a class that 4.0.1 lacks — a measured need, not a newer release.
+- **Status:** LOCKED (2026-09-02)
