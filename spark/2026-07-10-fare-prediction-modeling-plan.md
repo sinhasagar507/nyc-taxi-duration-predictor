@@ -519,8 +519,24 @@ now would churn Docker mounts and import paths for cosmetics — not worth it.
       `max|x|` 2,228,170 → **52**. Smoke: `ols`/`ridge` R² **0.969**.
       **Added:** §4a split policy — `evaluate.make_holdout` + `--holdout-frac` /
       `--no-holdout`. 208 unit tests green.
-      **Known, untouched:** design matrix is rank 25/27 (full one-hot + intercept =
-      dummy trap, cond ≈ 4e15); coefficients unstable across folds. Separate defect.
+      **Rank deficiency — closed 2026-09-01, and it closed earlier than anyone
+      recorded.** The line here used to read "known, untouched: rank 25/27, cond ≈ 4e15,
+      coefficients unstable". `fc87020` fixed it on 2026-08-01 by dropping a reference
+      level per categorical on the scaled variant, but neither this Status nor the
+      2026-08-22 audit (item 12) was updated, so a solved defect stayed on two open lists
+      for a month. Re-measured on the 612,608-row train split:
+
+      | variant | shape | rank | with intercept | cond (with intercept) |
+      |---|---|---|---|---|
+      | `scaled` (linear/NN) | 612,608 × 23 | **23 / 23** | **24 / 24** | **6.97e+03** |
+      | `tree` (GBT et al.) | 612,608 × 26 | 24 / 26 | 24 / 27 | 2.95e+16 |
+
+      The `scaled` matrix is full rank, so the dummy trap is gone and linear coefficients
+      are interpretable again. The `tree` matrix is still deficient by exactly the
+      predicted amount — three full one-hot blocks each summing to 1 give two
+      dependencies, three against an intercept — and that is **by design, not a defect**:
+      trees split rather than invert, keeping every level costs them nothing, and dropping
+      one would only make that level harder to split on.
 - [~] Phase 4b: Spark MLlib GBT baseline (§5b) — helpers `spark/ml/src/mllib.py` +
       `tests/unit/ml/test_mllib.py` (28 tests) and the script `01_mllib_baseline.py` are
       committed (`3fe9d78`). **First run done 2026-08-08** on the `sample_work` train split

@@ -188,6 +188,14 @@ def build_pipeline(
     # Strip the inherited nominal metadata — see the docstring. No stage at all
     # when nothing is target-encoded, so the ablation path stays identical to
     # the pipeline that produced the 2026-08-08 row.
+    #
+    # `SELECT *` deliberately keeps the intermediate `_idx` and `_te_nominal`
+    # columns, whose schema carries ~19,000 category labels of `ml_attr`
+    # metadata into every task binary. Projecting them away was measured on
+    # 200,000 rows at maxIter=20 and changed nothing: 65.3s against 65.9s, the
+    # same metrics to four decimal places. The cost of this pipeline is
+    # target-encoding and boosting work, not metadata serialisation, so the
+    # simpler statement stays.
     demote = (
         [
             SQLTransformer(

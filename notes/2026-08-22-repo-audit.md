@@ -75,8 +75,18 @@ off here when done. The three standing Deferred items in CLAUDE.md (PR,
       it untouched until modeling Phase 5 scores the sealed holdout. Moving it is not a
       rewrite, but the entry says *untouched*, and the file's fate — rewrite or delete —
       is decided by that same phase. Move it then, in the change that settles it.
-- [ ] 12. Known model defect unassigned: design matrix rank 25/27 (dummy trap,
+- [x] 12. Known model defect unassigned: design matrix rank 25/27 (dummy trap,
       cond ≈ 4e15), coefficients unstable. Assign it a phase in the modeling plan.
+      **Closed 2026-09-01 — the defect was already fixed.** `fc87020` (2026-08-01) added
+      `drop="first"` to the scaled variant's OneHotEncoder, three weeks before this audit
+      recorded the item. The audit copied the modeling plan's stale "known, untouched"
+      line instead of re-measuring. Re-measured on the 612,608-row train split: the
+      `scaled` matrix is **rank 23/23**, 24/24 with an intercept, cond **6.97e+03**. The
+      `tree` matrix stays rank 24/26 by design — trees split rather than invert, so full
+      one-hot costs them nothing. So no phase needed assigning; the plan's Status now
+      carries the measurement instead of the stale claim.
+      **The transferable lesson:** an audit that copies a status line inherits its age.
+      Numbers in a checklist need re-measuring at the moment they are written down.
 
 ## Attack order
 
