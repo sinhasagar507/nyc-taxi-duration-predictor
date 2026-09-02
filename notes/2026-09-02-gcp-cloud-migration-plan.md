@@ -425,14 +425,19 @@ config that a test can pin, the failing test lands first.
 
 ### M0 — Hygiene, local only, no cloud, fully reversible
 
-- [ ] **Test first:** extend `tests/unit/dags/test_dag_config.py` (or a new
+- [x] **Test first:** extend `tests/unit/dags/test_dag_config.py` (or a new
       `tests/unit/test_stale_ids.py`) with two guards — (a) no file under `terraform/`
       matching `*.tfstate*` is tracked by git; (b) `dbt/ny_taxi_analytics/models/staging/*.yml`
       contains no literal `dtc-de-` project ID in a `database:` line (read-only scan of the
-      submodule; that is allowed). Both fail today.
-- [ ] Remove the three tfstate files from the index (`git rm --cached`), add
+      submodule; that is allowed). Both fail today. **Done `6315b87`:** new
+      `tests/unit/test_stale_ids.py`. Guard (a) passes now. Guard (b) is
+      `xfail(strict=True)`, blocked on the upstream push, and carries positive controls so
+      a pattern that stopped matching cannot pass silently.
+- [x] Remove the three tfstate files from the index (`git rm --cached`), add
       `terraform/*.tfstate*` and `terraform/.terraform/` to `.gitignore`. Keep the files on
-      disk until M1 confirms the fresh state, then delete.
+      disk until M1 confirms the fresh state, then delete. **Done `6315b87`:**
+      `git ls-files -- 'terraform/*.tfstate*'` is empty, both ignore patterns are in
+      `.gitignore`, and all three files are still on disk as intended. **M1 deletes them.**
 - [x] Rewrite `terraform/main.tf` per 2.6; keep `variables.tf` defaults. `terraform
       validate` only — no `init` against a backend yet. **Done `0b6421c`:** the bucket plus
       the five datasets, `demo_dataset` gone, `variables.tf` untouched (`var.bq_dataset_name`
@@ -613,7 +618,11 @@ config that a test can pin, the failing test lands first.
 - [ ] `notes/2026-08-22-repo-audit.md`: check off 5, 6, 8; the workstream order (item 6)
       is: **this migration through M3 → modeling §5 encoder + §5c → dashboard v3.**
       Item 8's "one next pointer" is: CLAUDE.md → this file → the modeling plan Status.
-- [ ] `spark/ml/requirements.txt` to `pyspark==4.0.1` if M0's parity test passed.
+- [x] `spark/ml/requirements.txt` to `pyspark==4.0.1` if M0's parity test passed.
+      **Done early, in M0 (`cc8b7a9`).** 2.4 pre-registered the pin move as the consequence
+      of a result inside fold noise, and the result was bit-identical, so it landed with the
+      measurement rather than waiting for M6. The four "we run 4.1.2" statements it made
+      stale moved with it.
 - **Gate:** `pytest tests/` green; `test_docker_runtime.py` pins still hold.
 
 ---
