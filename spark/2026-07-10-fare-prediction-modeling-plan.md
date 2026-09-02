@@ -263,9 +263,9 @@ never fire, because boroughs and `service_type` are closed sets from the zone lo
 
 | Row | Stack | Rows | `od_corridor` | Status |
 |---|---|---|---|---|
-| 1. Phase-4 champion | sklearn | 612,608 (`sample_work` train) | ✅ target-encoded, cross-fitted | done — `sweep_work` |
-| 2. MLlib GBT | Spark | 612,608 (`sample_work` train) | ✅ target-encoded, smoothed | **to run** |
-| 3. MLlib GBT, corridor dropped | Spark | 612,608 (`sample_work` train) | ❌ | done — `sweep_mllib_gbt` |
+| 1. Phase-4 champion (`lightgbm`) | sklearn | 612,608 (`sample_work` train) | ✅ target-encoded, cross-fitted | done — `sweep_work` |
+| 2. MLlib GBT | Spark | 612,608 (`sample_work` train) | ✅ target-encoded, smoothing 5 | **done 2026-09-01 — `sweep_mllib_gbt`** |
+| 3. MLlib GBT, corridor dropped | Spark | 612,608 (`sample_work` train) | ❌ | done — `sweep_mllib_gbt_nocorr` |
 
 Row 1 against row 2 is the like-for-like stack comparison, and it is the headline. Row 3
 against row 2 quantifies what the corridor is worth inside Spark. Row 3 is already paid
@@ -293,19 +293,63 @@ noise rather than a confound — but it is not the equivalence an earlier draft 
 section claimed. Results adapt into the existing `leaderboard()` as ordinary rows, so
 everything still lands in one table.
 
-**Expected outcome, stated up front:** with the corridor present on both sides, the MLlib
-GBT lands close to but behind the sklearn boosting champion — from MLlib's weaker GBT
-implementation and its uncross-fitted encoder, no longer from a missing feature — and costs
-materially more wall time for the same 612,608 rows, because Spark's scheduling and shuffle
-overhead buys nothing at a size that fits in memory. Confirming *that* is the point locally:
-it establishes the per-row cost of each stack cleanly, and §5c is where the scale argument
-gets made instead.
+**Expected outcome, stated up front (2026-08-09):** with the corridor present on both
+sides, the MLlib GBT lands close to but behind the sklearn boosting champion — from MLlib's
+weaker GBT implementation and its uncross-fitted encoder, no longer from a missing feature
+— and costs materially more wall time for the same 612,608 rows, because Spark's scheduling
+and shuffle overhead buys nothing at a size that fits in memory. Confirming *that* is the
+point locally: it establishes the per-row cost of each stack cleanly, and §5c is where the
+scale argument gets made instead.
 
-The wall-time half is already measured. The 2026-08-08 run (row 3) took **51.4s per fold**
-against lightgbm's **1.0s** on identical rows — a 50x gap. Row 2 adds an encoder stage, so
-expect it slightly higher. The accuracy half is what row 2 exists to settle: row 3 scored
-MAE $0.483 against the champion's $0.350, and that gap is still confounded by the missing
-corridor.
+### Measured outcome — 2026-09-01. Half of that prediction was wrong.
+
+| Row | Model | MAE | RMSE | R² | s/fold |
+|---|---|---|---|---|---|
+| 1 | `lightgbm` (sklearn champion) | **0.3503** ±0.0015 | **1.0516** | **0.9883** | **1.0** |
+| 3 | `mllib_gbt_nocorr@work612k` (corridor dropped) | 0.4828 ±0.0038 | 1.2582 | 0.9833 | 51.4 |
+| 2 | `mllib_gbt@work612k` (corridor, smoothing 5) | 0.5202 ±0.0050 | 1.4502 | 0.9778 | 170.5 |
+| — | same, smoothing 20 (first attempt) | 0.5292 ±0.0096 | 1.5258 | 0.9753 | 220.9 |
+
+**The wall-time half held, and then some.** Row 2 costs **170.5s per fold** against
+lightgbm's **1.0s** — a 167x gap on identical rows, where row 3's was 50x. The encoder
+stage more than tripled the per-fold cost, and the whole 5-fold run took 989s.
+
+**The accuracy half was wrong, and interestingly so.** Row 2 was supposed to close most of
+the gap to row 1 by restoring the corridor. It did the opposite: **adding the corridor made
+MLlib worse than dropping it**, on all three metrics, and roughly doubled the fold-to-fold
+spread. The same feature that carries the sklearn champion is a liability in Spark.
+
+**It is not an artefact of the smoothing value.** The obvious objection — a badly chosen
+knob — was tested before the result was written down. Seven arms, identical rows (200,000),
+3 folds, `maxIter=20`, mean MAE:
+
+| corridor dropped | s=5 | s=1 | s=0.067 | s=100 | s=20 | s=500 |
+|---|---|---|---|---|---|---|
+| **0.6329** | 0.6650 | 0.6713 | 0.6908 | 0.7094 | 0.7102 | 0.7236 |
+
+**No smoothing beats dropping the corridor.** The best encoded arm (s=5) still loses by
+0.03 MAE, and the curve has no useful minimum — it is flat-ish and bad on both sides. So
+row 2 is reported at s=5, the measured best, rather than at the s=20 the leakage bound
+originally argued for. The first attempt is kept as `sweep_mllib_gbt_s20`, because a
+hyperparameter chosen from data and then reported is worth showing the search for.
+
+**What the difference is, and what it is not.** The two stacks now differ in exactly one
+respect: sklearn's `TargetEncoder` cross-fits inside `fit_transform`, Spark's does not.
+Both are safe against test-fold leakage — each pipeline is fitted on its own fold's train
+half — so neither CV score is inflated. The residual sits in the training half, and §5b
+predicted it would bias Spark **downward**. It does. What was not predicted is the size:
+enough to make the feature net-negative. The mechanism is consistent with over-trust rather
+than with an inflated score — during training the encoding partly contains each row's own
+fare, so the booster leans on a signal that is weaker at prediction time — but this run
+establishes the *effect*, not the mechanism. Isolating the mechanism would need a
+cross-fitted encoding computed outside MLlib and fed in as a plain column. That is not
+scheduled; it is written here so the claim is not quietly upgraded later.
+
+**The honest portfolio statement** is therefore not "Spark's GBT is a bit behind sklearn's".
+It is: at 612,608 rows on one machine, the sklearn stack is **1.5x more accurate and 167x
+faster**, and the one preprocessing capability MLlib lacks — a cross-fitted target encoder —
+is worth more than the feature it encodes. §5c is where the scale argument gets made
+instead, and it is the only place the Spark side can win.
 
 ---
 
@@ -537,17 +581,28 @@ now would churn Docker mounts and import paths for cosmetics — not worth it.
       dependencies, three against an intercept — and that is **by design, not a defect**:
       trees split rather than invert, keeping every level costs them nothing, and dropping
       one would only make that level harder to split on.
-- [~] Phase 4b: Spark MLlib GBT baseline (§5b) — helpers `spark/ml/src/mllib.py` +
-      `tests/unit/ml/test_mllib.py` (28 tests) and the script `01_mllib_baseline.py` are
-      committed (`3fe9d78`). **First run done 2026-08-08** on the `sample_work` train split
-      (612,608 rows — the sweep's own rows), 5 folds, GBT maxIter=100 maxDepth=5:
-      MAE $0.483 / RMSE 1.258 / R² .9833, 51.4s per fold against lightgbm's 1.0s.
-      **That run is row 3, not the baseline** — it dropped `od_corridor` on a premise the
-      2026-08-09 correction in §5b overturned. It stands as the corridor ablation.
-      **Remaining:** row 2 — add `StringIndexer` + `TargetEncoder` on `od_corridor` to the
-      pipeline (TDD on `src/mllib.py` first, `MLLIB_EXCLUDED_COLUMNS` no longer holds the
-      corridor), pick and record a `smoothing` value, rerun under a distinct tag, and
-      rename the 2026-08-08 row to `mllib_gbt_nocorr@work612k`.
+- [x] **Phase 4b: Spark MLlib GBT baseline (§5b) — COMPLETE 2026-09-01.** All three rows
+      are in. Helpers `spark/ml/src/mllib.py` + `tests/unit/ml/test_mllib.py` (37 tests)
+      and the script `01_mllib_baseline.py`, both on the `sample_work` train split (612,608
+      rows — the sweep's own rows), 5 folds, GBT maxIter=100 maxDepth=5.
+      - **Row 3, 2026-08-08** — `mllib_gbt_nocorr@work612k`: MAE $0.483 / RMSE 1.258 /
+        R² .9833, 51.4s per fold. Tagged `mllib_gbt` at the time, in the belief that it was
+        the baseline; it dropped `od_corridor` on a premise the 2026-08-09 correction
+        overturned, so it is the corridor **ablation**. Renamed 2026-09-01.
+      - **Row 2, 2026-09-01** — `mllib_gbt@work612k`: `StringIndexer` + `TargetEncoder`
+        (`targetType="continuous"`, `handleInvalid="keep"`, smoothing 5) on `od_corridor`.
+        MAE $0.520 / RMSE 1.450 / R² .9778, 170.5s per fold, 989s for the run.
+      - **The result is a negative one, and it replicates.** Restoring the corridor made
+        MLlib *worse* than dropping it, and no smoothing value tested (0.067 … 500 across
+        seven arms) beat the ablation. §5b carries the table and the reading: the one
+        capability MLlib lacks — a cross-fitted target encoder — costs more than the
+        feature it encodes.
+      - Row 1 stands at MAE $0.350 / 1.0s per fold, so the stack gap on identical rows is
+        **1.5x accuracy and 167x wall time**, both in sklearn's favour.
+      - Two Spark 4.1.2 facts landed in the code as a result: `targetType` defaults to
+        `"binary"` and must be set for a dollar target, and `TargetEncoderModel` copies the
+        indexer's nominal metadata onto its numeric output, which makes `VectorAssembler`
+        call the feature categorical and GBT fail on `maxBins`.
 - [ ] **Cloud full-scale run (§5c, decided 2026-08-04).** `sample_full` (12.75M) for
       **both** sklearn and MLlib. Local machine measured at 4.8 GB frame / ~8.2 h for the
       whole sweep on an 18 GiB M3 Pro; scope the cloud run to the top 4 + corridor-dropped
