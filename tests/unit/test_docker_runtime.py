@@ -7,9 +7,10 @@ them need a Docker daemon, so they run on the host, in CI, and inside the contai
 
 The invariants worth locking, and why each one earns its place:
 
-* The build context is the repo root, which holds a gitignored 7.1 GB
-  `migration_backup/`. A `.dockerignore` regression would silently ship that to the
-  daemon on every build.
+* The build context is the repo root. It held a gitignored 7.1 GB
+  `migration_backup/` until audit item 10 moved that outside the repository
+  (2026-09-01). The `.dockerignore` guard stays: the exclusion costs nothing, and it
+  is what stops the directory shipping to the daemon if it is ever restored.
 * `dbt-bigquery` is pinned in `dbt/requirements.txt` and consumed by two images.
   The Airflow dockerfile asks for sync in a comment; nothing enforced it until now.
 * `libgomp1` is an apt package whose absence produces a *green build* that

@@ -5,8 +5,9 @@ swapping GCP projects/accounts is a one-file drop at the stable path
 `secrets/gcp-credentials.json` plus a single `.env` edit — not a repo-wide hunt.
 
 These are guard tests: they scan tracked code/config for the old, project-ID-embedded
-keyfile stem and fail if it reappears. Docs and the local `migration_backup/` are
-exempt (docs legitimately narrate history; the backup is gitignored data).
+keyfile stem and fail if it reappears. Docs are exempt — they legitimately narrate
+history. The migration backup is exempt too, and since audit item 10 (2026-09-01) it
+is not in the working tree at all.
 """
 from pathlib import Path
 

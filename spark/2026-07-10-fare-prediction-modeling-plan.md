@@ -10,7 +10,8 @@
 ## 0. Framing
 
 - **Target:** `fare_capped` (continuous → **regression**)
-- **Data flow:** `migration_backup/fact_trips/` (128.8M rows, 204 parquet, **Spark local**) → guards + stratified sample → **pandas / scikit-learn** from here on. Spark ends before modeling starts. **Torch never runs inside Spark.**
+- **Data flow:** `<backup>/fact_trips/` (128.8M rows, 204 parquet, **Spark local**;
+  the backup moved out of the repo on 2026-09-01 — see `spark/ml/src/paths.py`) → guards + stratified sample → **pandas / scikit-learn** from here on. Spark ends before modeling starts. **Torch never runs inside Spark.**
 - **No GCP needed.** The dbt-built `fact_trips` backup on local disk is the complete model input. The old account's $50 reactivation is not required for any of this work.
 - **Metrics:** MAE, RMSE, R² — overall + sliced by `pickup_borough`, `temp_band`, `pickup_hour`.
 
@@ -394,7 +395,7 @@ Currently 92% full / ~36 GB free. Reclaim ~10 GB of dead FHVHV homework (untrack
 | `spark/data/` (old raw/pq) | 2.4 G | verify then delete |
 | `spark/fhvhv_tripdata_2021-01.csv` + `.gz` | 0.8 G | delete |
 | `spark/fhvhv/`, `spark/fhvhv_susbet/` | 0.6 G | delete |
-| **`migration_backup/`** | 7.1 G | **KEEP — crown jewels** |
+| **`migration_backup/`** | 7.1 G | **KEEP — crown jewels.** Moved to `../nyc_taxi_migration_backup/` on 2026-09-01 (audit item 10); same disk, outside the repo. |
 
 ---
 

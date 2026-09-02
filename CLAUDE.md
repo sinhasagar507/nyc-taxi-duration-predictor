@@ -111,8 +111,11 @@ Three environments with non-overlapping jobs. Two Docker stacks; they are never 
 
 - **Deploys:** Airflow image + DAGs (ingest → external tables → `dbt_build_marts`),
   dbt project via the submodule pin, Terraform-managed infra (bucket, BQ datasets).
-- **Stays local:** notebooks, EDA artifacts, `spark/head.csv`, `migration_backup/`,
-  ML experiments. Tests run locally + in CI, not on the VM.
+- **Stays local:** notebooks, EDA artifacts, ML experiments, and the 7.1 GB
+  `fact_trips` backup — which since audit item 10 (2026-09-01) lives **outside the
+  repository**, in the sibling `nyc_taxi_migration_backup/`. `spark/ml/src/paths.py`
+  resolves it; set `MIGRATION_BACKUP_DIR` to point elsewhere. Tests run locally + in
+  CI, not on the VM.
 - **Auth:** keyfile via `GOOGLE_APPLICATION_CREDENTIALS` locally/CI; on the VM use an
   attached service account (ADC) — no keyfiles inside images or git, ever.
 - **Prod images are built on the VM itself** (decided 2026-07-10): clone the repo on the

@@ -1,7 +1,7 @@
 """
 Phase 1 — Spark data prep for the fare-prediction model.
 
-Reads the local `migration_backup/fact_trips/` parquet backup (128.78M rows, the
+Reads the local `fact_trips/` parquet backup (128.78M rows, the
 dbt-built fact table exported before the GCP account lapsed), applies the data-quality
 guards and cap logic from the ML handoff note, derives the Looker-only calculated
 fields (fare_capped, distance_capped, trip_duration_min, temp_band, is_airport_trip),
@@ -13,9 +13,15 @@ and writes two stratified samples for downstream single-machine modeling:
 Spark's job ends here. Everything downstream (feature engineering, the model sweep,
 neural nets) runs in pandas / scikit-learn on these samples — no Spark, no GPU, no cloud.
 
+The backup sits OUTSIDE the working tree (audit item 10, 2026-09-01) — by
+default in the repository's sibling `nyc_taxi_migration_backup/`. Override with
+the `MIGRATION_BACKUP_DIR` environment variable; see `spark/ml/src/paths.py`.
+
 Run (from repo root):
     .venv/bin/python spark/ml/00_prep_spark.py                 # full 128M pass
     .venv/bin/python spark/ml/00_prep_spark.py --limit-files 3 # fast dry-run
+    MIGRATION_BACKUP_DIR=/Volumes/ext/backup \
+        .venv/bin/python spark/ml/00_prep_spark.py             # backup elsewhere
 
 Design notes (see spark/2026-07-04-ml-handoff-context.md and
 spark/2026-07-10-fare-prediction-modeling-plan.md):
@@ -33,14 +39,24 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
 from pathlib import Path
 
 from pyspark.sql import SparkSession, DataFrame
 from pyspark.sql import functions as F
 
 # --- paths -------------------------------------------------------------------
+# Import the unit-tested path policy by its package path (repo root on sys.path).
 REPO_ROOT = Path(__file__).resolve().parents[2]
-FACT_TRIPS_DIR = REPO_ROOT / "migration_backup" / "fact_trips"
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from spark.ml.src.paths import BACKUP_DIR_ENV, resolve_fact_trips_dir  # noqa: E402
+
+# The 7.1 GB backup lives OUTSIDE the working tree since audit item 10
+# (2026-09-01). `spark/ml/src/paths.py` owns the resolution rule; set
+# MIGRATION_BACKUP_DIR to point the prep at a different disk or mount.
+FACT_TRIPS_DIR = resolve_fact_trips_dir()
 OUT_DIR = REPO_ROOT / "spark" / "ml" / "data"
 STATS_PATH = OUT_DIR / "prep_stats.json"
 
@@ -77,7 +93,11 @@ def build_spark(driver_mem: str = "6g") -> SparkSession:
 def load(spark: SparkSession, limit_files: int | None) -> DataFrame:
     files = sorted(str(p) for p in FACT_TRIPS_DIR.glob("*.parquet"))
     if not files:
-        raise FileNotFoundError(f"No parquet under {FACT_TRIPS_DIR}")
+        raise FileNotFoundError(
+            f"No parquet under {FACT_TRIPS_DIR}. The backup lives outside the "
+            f"repository since audit item 10 — set {BACKUP_DIR_ENV} if it is "
+            "somewhere other than the repo's sibling directory."
+        )
     if limit_files:
         files = files[:limit_files]
     print(f"[load] reading {len(files)} parquet file(s) from {FACT_TRIPS_DIR}")

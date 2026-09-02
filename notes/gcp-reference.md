@@ -3,7 +3,9 @@
 Moved out of CLAUDE.md 2026-08-22. The GCP project this pipeline originally ran against
 has been **retired** (trial exhausted / account disabled). Do not treat any resource
 below as live, and do not expect credentials to be present. The marts were backed up
-locally (`migration_backup/`) and to GCS before shutdown. Identifiers (project ID,
+locally and to GCS before shutdown. The local copy sits **outside the repository**
+since audit item 10 (2026-09-01), in the sibling `nyc_taxi_migration_backup/`;
+`spark/ml/src/paths.py` resolves it and `MIGRATION_BACKUP_DIR` overrides it. Identifiers (project ID,
 service account, keyfile) were removed on purpose — supply your own via
 `GOOGLE_APPLICATION_CREDENTIALS` if/when reconnecting to a live project. The layout is
 retained as a structural reference for the data model.

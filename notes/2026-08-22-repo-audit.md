@@ -52,8 +52,17 @@ off here when done. The three standing Deferred items in CLAUDE.md (PR,
       `nyc_taxi_duration_prediction_1.ipynb`, `pyspark_r_equivalent_toolkit.ipynb`. The
       audit never named them, and the first two are the pre-pivot duration work the owner
       still has plans for. Decide them separately.
-- [ ] 10. `migration_backup/` (7.1 GB) sits inside the working tree. Move it outside
+- [x] 10. `migration_backup/` (7.1 GB) sits inside the working tree. Move it outside
       the repo.
+      **Done 2026-09-01.** Moved to the repo's sibling
+      `/Applications/saggydev/projects_learning/nyc_taxi_migration_backup/` — same disk,
+      so the move was a rename. All 204 `fact_trips` parquet files verified in place.
+      `spark/ml/00_prep_spark.py` hard-coded `REPO_ROOT / "migration_backup"`, so the
+      path became policy in the new `spark/ml/src/paths.py` (TDD, 7 tests): the
+      `MIGRATION_BACKUP_DIR` env var wins, else the sibling directory. The `.dockerignore`
+      guard in `test_docker_runtime.py` stays — it costs nothing and still catches a
+      restore. Docs updated in CLAUDE.md, `notes/gcp-reference.md`, `MIGRATION_RUNBOOK.md`
+      and the modeling plan.
 - [ ] 11. Loose root documents (`2026-05-24-Dashboard-development-plan-v3.md`,
       `project-status-phase5.pdf`, `MIGRATION_RUNBOOK.md`, `CASE_STUDY.md`) have no
       home. Relocate to `notes/`.

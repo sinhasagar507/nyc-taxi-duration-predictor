@@ -3,7 +3,8 @@
 Old project `dtc-de-project-492321` free trial exhausted. This runbook is the **only part
 that requires your Google login/billing** — everything else Claude does for you.
 
-Backup already taken → `migration_backup/` (dim tables, view SQL, all schemas). Old BQ is
+Backup already taken → `../nyc_taxi_migration_backup/` (dim tables, view SQL, all
+schemas). It sat inside the repo until audit item 10 moved it out on 2026-09-01. Old BQ is
 still readable as of migration start, so the marts can be copied directly once the new
 project exists.
 
