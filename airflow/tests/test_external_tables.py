@@ -4,6 +4,7 @@ Test-Driven Development tests for External Table Creation DAGs.
 This module tests the BigQuery external table creation DAGs.
 """
 
+import os
 import pytest
 from unittest.mock import Mock, patch
 from airflow.models import DagBag
@@ -49,10 +50,13 @@ class TestGreenTaxiExternalTable:
     def test_external_table_sql_query_format(self, dagbag):
         """Test that the SQL query is properly formatted."""
         # GIVEN: Expected values from the DAG
-        project_id = 'dtc-de-project-492321'
+        # The values airflow/tests/conftest.py exports into the environment. The DAG
+        # reads GCP_PROJECT_ID / GCP_GCS_BUCKET from os.environ, so the expectation has
+        # to come from the same place rather than from a literal that drifts.
+        project_id = os.environ.get('GCP_PROJECT_ID', 'test-project-id')
         dataset_id = 'nyc_taxi_data'
         table_id = 'green_taxi_external_table'
-        bucket_name = 'primary-data-dtc'
+        bucket_name = os.environ.get('GCP_GCS_BUCKET', 'test-bucket')
         source_folder = 'nyc_taxi_data/green_taxi_data/'
         
         # WHEN: We construct the expected SQL

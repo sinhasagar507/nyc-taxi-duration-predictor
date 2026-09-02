@@ -1,19 +1,36 @@
 """
 Unit tests for DAG configuration correctness — no Airflow installation required.
-Checks env var usage, absence of stale hardcoded IDs, and DAG chaining wiring.
+Checks env var usage, absence of hardcoded IDs, and DAG chaining wiring.
+
+**Generalised 2026-09-02.** This used to hold a literal list of stale project IDs. A
+literal list only catches the mistakes already made; it said nothing about the *current*
+project ID being hardcoded, which is the same defect wearing a newer name. The guard now
+matches the shape of any project ID in this account's naming family, so it catches the
+next one too — and it carries no account identifier in the test file.
+
+A pattern that matches nothing passes forever while protecting nothing, so
+`TestTheGuardStillBites` proves each pattern still fires on a synthetic example.
 """
 
+import re
 import pytest
 from pathlib import Path
 
 DAGS_DIR = Path(__file__).parents[3] / "airflow" / "dags"
 
-STALE_IDS = [
-    "dtc-de-course-466501",
-    "dtc-de-course-440404",
-    "dtc-de-project_1",
-    "dbt_production",
-]
+# Any hardcoded project ID from this account's naming family, current or stale. The DAGs
+# read GCP_PROJECT_ID from os.environ (see TestEnvVarUsage), so no literal belongs in
+# one — a correct-looking literal is worse than a stale one, because it works until the
+# project changes and then fails somewhere far away.
+PROJECT_ID_PATTERN = re.compile(r"dtc-de-[a-z0-9][a-z0-9_-]*")
+
+# Not an ID, a naming rule: the dbt prod dataset is `dbt_prod`. `dbt_production` is a
+# recurring typo that points at a dataset which does not exist, and BigQuery reports that
+# as a missing table rather than as a missing dataset.
+WRONG_DATASET = "dbt_production"
+
+# Synthetic, not real. Used only to prove the pattern still bites.
+SYNTHETIC_PROJECT_ID = "dtc-de-example-000000"
 
 INGEST_DAGS = [
     "nyc_taxi_gcs_yellow_dag.py",
@@ -37,14 +54,36 @@ INGEST_TO_DOWNSTREAM = {
 }
 
 
-class TestNoStaleIDs:
+class TestNoHardcodedIDs:
     @pytest.mark.parametrize("dag_file", INGEST_DAGS + EXTERNAL_TABLE_DAGS)
-    def test_dag_contains_no_stale_project_or_bucket_ids(self, dag_file):
+    def test_dag_contains_no_hardcoded_project_id(self, dag_file):
         content = (DAGS_DIR / dag_file).read_text()
-        found = [sid for sid in STALE_IDS if sid in content]
+        found = sorted(set(PROJECT_ID_PATTERN.findall(content)))
         assert not found, (
-            f"{dag_file} contains stale IDs that must be removed: {found}"
+            f"{dag_file} hardcodes a project ID: {found}. Read GCP_PROJECT_ID from "
+            "os.environ instead — docker-compose.yaml is the single source of truth."
         )
+
+    @pytest.mark.parametrize("dag_file", INGEST_DAGS + EXTERNAL_TABLE_DAGS)
+    def test_dag_does_not_use_the_wrong_dbt_dataset(self, dag_file):
+        content = (DAGS_DIR / dag_file).read_text()
+        assert WRONG_DATASET not in content, (
+            f"{dag_file} references '{WRONG_DATASET}'. The dbt prod dataset is "
+            "'dbt_prod'; the longer name resolves to nothing."
+        )
+
+
+class TestTheGuardStillBites:
+    """Positive controls. Without these, a broken pattern passes silently forever."""
+
+    def test_project_pattern_catches_a_hardcoded_id(self):
+        found = PROJECT_ID_PATTERN.findall(f"PROJECT_ID = '{SYNTHETIC_PROJECT_ID}'")
+        assert found == [SYNTHETIC_PROJECT_ID]
+
+    def test_project_pattern_ignores_ordinary_dag_text(self):
+        """It must not fire on the words a normal DAG is made of."""
+        ordinary = "PROJECT_ID = os.environ.get('GCP_PROJECT_ID')  # create_external_table"
+        assert not PROJECT_ID_PATTERN.search(ordinary)
 
 
 class TestEnvVarUsage:
