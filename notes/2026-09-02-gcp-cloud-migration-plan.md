@@ -440,8 +440,39 @@ config that a test can pin, the failing test lands first.
       `terraform validate` → Success; no plan, no apply. The provider lock file is committed
       with darwin_arm64 *and* linux_amd64 hashes so `init` also works on the M1 VM.
 - [ ] **Upstream** in `ny_taxi_analytics`: **delete** the `database:` line from both
-      staging schema files — *corrected 2026-09-02, see the note below;* the `fact_trips` partition/cluster config (2.2) after
-      reading its current block. Merge there, then bump the submodule pointer here.
+      staging schema files — *corrected 2026-09-02, see the note below;* the `fact_trips`
+      partition/cluster config (2.2) after reading its current block. Merge there, then bump
+      the submodule pointer here.
+
+      **BLOCKED on the owner — only they push to `ny_taxi_analytics`.** The `database:`
+      half is prepared and dry-run: it is two deletions, verified to apply cleanly against
+      the currently pinned commit `d11219d`, and re-verified 2026-09-02 against the
+      installed dbt 1.11.11 (`dbt/parser/sources.py:154,158` —
+      `database=(source.database or default_database)`), so an absent `database` inherits
+      the profile's project. In the `ny_taxi_analytics` clone:
+
+      ```diff
+      --- a/models/staging/schema_taxi.yml
+      +++ b/models/staging/schema_taxi.yml
+      @@ sources: - name: staging
+      -    database: dtc-de-project-492321
+           schema: nyc_taxi_data
+
+      --- a/models/staging/schema_climate.yml
+      +++ b/models/staging/schema_climate.yml
+      @@ sources: - name: staging
+      -    database: dtc-de-project-492321 # new dataset name
+           schema: nyc_climate_data
+      ```
+
+      Keep `schema:` — that is the dataset, and it differs from the target. The stray
+      `# new dataset name` comment goes with the line it annotated; it labelled a project
+      as a dataset, which is the vocabulary collision that caused this. Then here:
+      `git submodule update --remote dbt/ny_taxi_analytics && git add dbt/ny_taxi_analytics`.
+      The moment the pointer bumps, the two `xfail(strict=True)` guards in
+      `tests/unit/test_stale_ids.py` fail hard — that failure is the instruction to delete
+      the marker. The `fact_trips` partition/cluster half of this bullet is untouched and
+      still needs 2.2 read against the current block.
 - [x] Update `.github/workflows/dbt.yml` to export `GCP_PROJECT_ID` if it does not already.
       **Done `c091af8`:** it did not, so every CI run silently targeted the dead fallback
       project. The auth step now resolves it — `vars.GCP_PROJECT_ID` first, else the
