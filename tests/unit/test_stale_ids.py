@@ -18,6 +18,29 @@ definitions name a literal project as their `database:`. The env var `GCP_PROJEC
 the single source of truth everywhere else in this repository, and dbt is the one place
 that ignores it.
 
+This one is a **vocabulary collision**, not a typo. dbt names things generically and
+BigQuery names them concretely, so the same two concepts carry two sets of words:
+
+    dbt schema YAML        BigQuery / profiles.yml
+    database:          ->  project
+    schema:            ->  dataset
+
+The collision has already produced a wrong comment in the repository — `schema_climate.yml`
+reads `database: <project> # new dataset name`, which labels a *project* as a *dataset*.
+
+**The fix is to delete the `database:` line, not to templatise it.** Verified against the
+installed dbt 1.11.11, `dbt/parser/sources.py:158`:
+
+    default_database = self.root_project.credentials.database
+    ...
+    database=(source.database or default_database),
+
+An absent `database` inherits the profile's `project`, which `dbt/profiles.yml` already
+resolves from `GCP_PROJECT_ID`. Writing `{{ env_var('GCP_PROJECT_ID') }}` into the source
+YAML would work, but it would duplicate a value the profile already owns — a second place
+to edit, and a second place to drift. `schema:` must **stay**: sources read from
+`nyc_taxi_data` / `nyc_climate_data`, which are not the target dataset.
+
 Reading inside `dbt/ny_taxi_analytics` is fine — `CLAUDE.md` forbids *editing* there, not
 looking. The fix goes upstream, then the submodule pointer moves. This guard is what tells
 you the pointer bump actually landed.
@@ -94,8 +117,9 @@ class TestSubmoduleSchemasUseTheEnvVar:
         strict=True,
         reason=(
             "Known defect, blocked upstream: both staging schemas hardcode a project as "
-            "`database:`. Fix in ny_taxi_analytics, bump the submodule pointer, then "
-            "remove this marker. Migration plan M0."
+            "`database:`. Fix by DELETING the line in ny_taxi_analytics (it inherits the "
+            "profile's project), bump the submodule pointer, then remove this marker. "
+            "Migration plan M0."
         ),
     )
     @pytest.mark.parametrize("schema", ["schema_taxi.yml", "schema_climate.yml"])
@@ -106,10 +130,13 @@ class TestSubmoduleSchemasUseTheEnvVar:
             pytest.skip(f"{schema} not present — submodule not checked out")
         found = sorted(set(DATABASE_LITERAL.findall(path.read_text())))
         assert not found, (
-            f"{schema} hardcodes a project as its source database: {found}. Fix it "
-            "upstream in ny_taxi_analytics with "
-            "`database: \"{{ env_var('GCP_PROJECT_ID') }}\"`, then bump the submodule "
-            "pointer here. Do not edit inside the submodule directory."
+            f"{schema} hardcodes a project as its source database: {found}. In dbt, "
+            "`database:` means the GCP *project*. Delete the line: an absent database "
+            "inherits the profile's `project`, which dbt/profiles.yml already resolves "
+            "from GCP_PROJECT_ID (verified, dbt 1.11.11 parser/sources.py:158). Keep "
+            "`schema:` — that is the dataset, and it differs from the target. Fix it "
+            "upstream in ny_taxi_analytics, then bump the submodule pointer here. Do not "
+            "edit inside the submodule directory."
         )
 
 

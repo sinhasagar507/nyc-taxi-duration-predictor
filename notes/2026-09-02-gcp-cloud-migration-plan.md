@@ -390,8 +390,8 @@ config that a test can pin, the failing test lands first.
       disk until M1 confirms the fresh state, then delete.
 - [ ] Rewrite `terraform/main.tf` per 2.6; keep `variables.tf` defaults. `terraform
       validate` only — no `init` against a backend yet.
-- [ ] **Upstream** in `ny_taxi_analytics`: `database: "{{ env_var('GCP_PROJECT_ID') }}"`
-      in both staging schema files; the `fact_trips` partition/cluster config (2.2) after
+- [ ] **Upstream** in `ny_taxi_analytics`: **delete** the `database:` line from both
+      staging schema files — *corrected 2026-09-02, see the note below;* the `fact_trips` partition/cluster config (2.2) after
       reading its current block. Merge there, then bump the submodule pointer here.
 - [ ] Update `.github/workflows/dbt.yml` to export `GCP_PROJECT_ID` if it does not already.
 - [ ] The Spark 4.0.1 parity test from 2.4 (throwaway container build; no file in the tree
@@ -399,6 +399,34 @@ config that a test can pin, the failing test lands first.
 - **Gate:** `pytest tests/` — unit count up by the new guards, all green; the 9 integration
   failures unchanged. **Rollback:** `git checkout` — nothing outside the repo moved.
 - **Cost:** $0.
+
+> **Correction — 2026-09-02, the `database:` fix.** An earlier draft of this bullet said to
+> write `database: "{{ env_var('GCP_PROJECT_ID') }}"` into both staging schema files. That
+> works, but it is the wrong fix. **Delete the line instead.**
+>
+> The defect is a vocabulary collision, not a typo. dbt names things generically and
+> BigQuery names them concretely, so the same two concepts carry two sets of words:
+> `database:` in a schema YAML is the **project**, and `schema:` is the **dataset**, while
+> `dbt/profiles.yml` calls the identical things `project` and `dataset`. The collision has
+> already produced a wrong comment in the repository — `schema_climate.yml` reads
+> `database: <project> # new dataset name`, labelling a project as a dataset.
+>
+> Verified against the installed dbt 1.11.11, `dbt/parser/sources.py:158`:
+>
+> ```python
+> default_database = self.root_project.credentials.database
+> ...
+> database=(source.database or default_database),
+> ```
+>
+> An absent `database` inherits the profile's `project`, which already resolves from
+> `GCP_PROJECT_ID`. Templatising the source YAML would duplicate a value the profile
+> already owns — a second place to edit and a second place to drift, which is the config
+> equivalent of the raw/derived duplicate that `d83141b` cost us. **`schema:` stays**: the
+> sources read `nyc_taxi_data` and `nyc_climate_data`, which are not the target dataset.
+>
+> Still blocked upstream either way. Deleting a line inside `dbt/ny_taxi_analytics` is
+> still editing the submodule, and pushing there is the owner's.
 
 ### M1 — Provision, via Terraform, one bucket and five datasets
 
