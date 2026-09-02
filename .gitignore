@@ -34,6 +34,12 @@ MANIFEST
 1_intro/terraform/.terraform.lock.hcl
 1_intro/terraform/terraform.tfstate
 1_intro/terraform/terraform.tfstate.1753224766.backup
+
+# Terraform state is machine-written and describes one view of live infrastructure.
+# Tracking it makes every clone disagree about what exists. The lock file is NOT
+# ignored — it pins provider versions and belongs in git. (M0, migration plan 2.6.)
+terraform/*.tfstate*
+terraform/.terraform/
 04_analytics_engineering/experimental_analysis/data/
 05_batch_processing/fhvhv/
 05_batch_processing/fhvhv_susbet/
