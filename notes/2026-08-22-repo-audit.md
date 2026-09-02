@@ -31,9 +31,9 @@ off here when done. The three standing Deferred items in CLAUDE.md (PR,
       to fare (title, intro, diagram, `spark/` tree, plus a note explaining the pivot).
       **Remaining:** `CASE_STUDY.md` waits for modeling Phase 5 — see D-005 in
       `notes/decisions.md`. The folder name stays; the README pivot note carries it.
-- [ ] 5. GCP successor decision missing: account retired, so Airflow/dbt/Terraform/BQ
-      cannot run end-to-end and the §5c cloud run has no target. Record a decision:
-      new account, local substitute, or archive-as-reference.
+- [ ] 5. GCP target decision missing: no project is provisioned, so Airflow/dbt/
+      Terraform/BQ cannot run end-to-end and the §5c cloud run has no target. Record a
+      decision: provision a project, build a local substitute, or archive-as-reference.
       *Rider (2026-08-22):* the decision settles the "Deployment split" subsection in
       CLAUDE.md — keep it if the GCP design continues, else move it to
       `notes/gcp-reference.md` and keep only the no-keyfiles auth rule.
@@ -69,8 +69,8 @@ off here when done. The three standing Deferred items in CLAUDE.md (PR,
       path became policy in the new `spark/ml/src/paths.py` (TDD, 7 tests): the
       `MIGRATION_BACKUP_DIR` env var wins, else the sibling directory. The `.dockerignore`
       guard in `test_docker_runtime.py` stays — it costs nothing and still catches a
-      restore. Docs updated in CLAUDE.md, `notes/gcp-reference.md`, `MIGRATION_RUNBOOK.md`
-      and the modeling plan.
+      restore. Docs updated in CLAUDE.md, `notes/gcp-reference.md`, the runbook (since
+      renamed `notes/gcp-setup-runbook.md`) and the modeling plan.
 - [~] 11. Loose root documents (`2026-05-24-Dashboard-development-plan-v3.md`,
       `project-status-phase5.pdf`, `MIGRATION_RUNBOOK.md`, `CASE_STUDY.md`) have no
       home. Relocate to `notes/`.
@@ -140,4 +140,4 @@ per-step review gate was suspended for that session only; nothing was pushed).
   up in the modeling plan §5b as a negative result with the seven-arm sweep behind it.
 
 Tests: 257 unit passed, 1 skipped. The 9 integration failures are pre-existing — they
-target the retired GCP account and fail identically before and after this session.
+need a provisioned GCP project, and fail identically before and after this session.

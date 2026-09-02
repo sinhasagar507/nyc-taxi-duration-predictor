@@ -30,18 +30,22 @@ TLC source data (2015-2016)
 
 ---
 
-## GCP Infrastructure — reference only (account retired)
+## GCP Infrastructure — reference layout
 
-> The GCP project this pipeline originally ran against has been **retired** (trial
-> exhausted). Treat nothing below as live, and do not expect credentials to be present.
-> Work is **local for now**; the marts were backed up locally and to GCS before shutdown.
-> Supply your own project via `GOOGLE_APPLICATION_CREDENTIALS` (stable path
-> `secrets/gcp-credentials.json`) and set `GCP_PROJECT_ID` / `GCP_GCS_BUCKET` if you
-> reconnect to a live project. The layout below is retained as a structural reference.
+> **No GCP project is provisioned for this repository, and the pipeline does not assume
+> one.** Treat nothing below as live, and do not expect credentials to be present. The
+> dbt-built marts are held locally, outside the working tree, which is what lets the
+> fare model in `spark/ml/` run end to end with no cloud at all.
+>
+> To point the pipeline at a project of your own: drop a service-account key at the
+> stable path `secrets/gcp-credentials.json`, export `GOOGLE_APPLICATION_CREDENTIALS`,
+> and set `GCP_PROJECT_ID` / `GCP_GCS_BUCKET`. Nothing else needs editing — those two
+> env vars are the single source of truth. The layout below is the structure the DAGs
+> and dbt models expect.
 
-| Resource | Value (reference) |
+| Resource | Value |
 | --- | --- |
-| GCS bucket | `primary-data-dtc` (US) |
+| GCS bucket | `$GCP_GCS_BUCKET` (US) |
 | BigQuery datasets | `nyc_taxi_data`, `nyc_climate_data`, `dbt_prod`, `dbt_ssinha` |
 | dbt prod target | `dbt_prod` |
 | dbt dev target | `dbt_ssinha` |
@@ -102,9 +106,9 @@ nyc_taxi_durationprediction/
 
 ### Phase 1 — Pipeline reconciliation with infrastructure
 
-All configuration reconciled against the GCP project the pipeline ran on (since retired).
-Stale project/bucket IDs were fixed and DAGs switched to reading config from environment
-variables.
+All configuration reconciled against the infrastructure the pipeline ran on. Stale
+project and bucket IDs were fixed, and the DAGs switched to reading config from
+environment variables.
 
 **Airflow DAGs (9 total):**
 
@@ -152,7 +156,7 @@ Renamed `05_batch_processing/` to `spark/` to match the target directory layout 
   stable, project-agnostic path (`secrets/gcp-credentials.json`) and the
   `GOOGLE_APPLICATION_CREDENTIALS` env var. Swapping GCP projects is a one-file drop plus a
   single `.env` edit — no repo-wide hunt. A guard test (`test_credential_decoupling.py`)
-  scans tracked code/config and fails if the old project-specific key filename reappears.
+  scans tracked code/config and fails if any project-specific key filename reappears.
 - **Ingest date range parametrized.** The backfill window is driven by `INGEST_START_DATE`
   / `INGEST_END_DATE` env vars (default `2015-01-01` … `2016-12-31`) rather than hardcoded
   dates, so extending coverage needs no DAG edits.
@@ -161,8 +165,8 @@ Renamed `05_batch_processing/` to `spark/` to match the target directory layout 
 
 ### Phase 5 — Documentation
 
-This README and `CLAUDE.md` reconciled to the final structure and the retired-account
-reality (no live GCP resources or credentials assumed).
+This README and `CLAUDE.md` reconciled to the final structure, and to running without a
+provisioned GCP project (no live resources or credentials assumed).
 
 ### Test suite (165 tests on the host, 166 in the dev container)
 
@@ -278,7 +282,7 @@ container.
 
 ## Looker Studio Dashboard
 
-A 6-page analytical dashboard is under active development against `dtc-de-project-492321.dbt_prod`. The dashboard connects to BigQuery via the native Looker Studio connector.
+A 6-page analytical dashboard is under active development against `$GCP_PROJECT_ID.dbt_prod`. The dashboard connects to BigQuery via the native Looker Studio connector.
 
 ### Validated baselines
 

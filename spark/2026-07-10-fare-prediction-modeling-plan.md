@@ -12,7 +12,7 @@
 - **Target:** `fare_capped` (continuous → **regression**)
 - **Data flow:** `<backup>/fact_trips/` (128.8M rows, 204 parquet, **Spark local**;
   the backup moved out of the repo on 2026-09-01 — see `spark/ml/src/paths.py`) → guards + stratified sample → **pandas / scikit-learn** from here on. Spark ends before modeling starts. **Torch never runs inside Spark.**
-- **No GCP needed.** The dbt-built `fact_trips` backup on local disk is the complete model input. The old account's $50 reactivation is not required for any of this work.
+- **No GCP needed.** The dbt-built `fact_trips` backup on local disk is the complete model input. No cloud project, billing, or credential is required for any of this work.
 - **Metrics:** MAE, RMSE, R² — overall + sliced by `pickup_borough`, `temp_band`, `pickup_hour`.
 
 ### Locked decisions (2026-07-10)

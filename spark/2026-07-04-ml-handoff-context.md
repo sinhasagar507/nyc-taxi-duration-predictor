@@ -10,7 +10,7 @@
 
 ## 1. Data source
 
-- **GCP project:** `dtc-de-project-492321`
+- **GCP project:** `$GCP_PROJECT_ID` (the marts now read from the local backup — see `spark/ml/src/paths.py`)
 - **Dataset:** `dbt_prod`
 - **Primary table:** `fact_trips` (built by dbt from `stg_green_taxi_data` + `stg_yellow_taxi_data`, unioned)
 - **Secondary view:** `feature_correlations_v` — precomputed Pearson correlations vs `fare_capped` (see §3)

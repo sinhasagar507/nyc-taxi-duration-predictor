@@ -46,12 +46,14 @@ The modeling target is **fare** (`fare_capped`), locked (D-001). The repository 
 still says "duration" and stays that way; the README carries a note explaining the pivot.
 `CASE_STUDY.md` still predates it — see D-005 and audit item 4.
 
-## GCP — retired account, working locally
+## GCP — not provisioned, working locally
 
-The original GCP project is **retired** (trial exhausted / account disabled). Treat no
-GCP resource as live; expect no credentials. Marts were backed up locally and to GCS
-before shutdown. Supply your own keyfile via `GOOGLE_APPLICATION_CREDENTIALS` if
-reconnecting. Bucket/dataset layout reference: **`notes/gcp-reference.md`**.
+**No GCP project is provisioned. Treat no GCP resource as live; expect no credentials.**
+Do not spend time diagnosing an auth failure — there is nothing to authenticate against.
+The dbt-built marts are held locally, outside the working tree, so `spark/ml/` runs end
+to end with no cloud. To connect a project of your own, supply a keyfile via
+`GOOGLE_APPLICATION_CREDENTIALS` and set `GCP_PROJECT_ID` / `GCP_GCS_BUCKET`.
+Bucket/dataset layout reference: **`notes/gcp-reference.md`**.
 
 The dbt project is a **git submodule** at `dbt/ny_taxi_analytics` (remote:
 github.com/sinhasagar507/ny_taxi_analytics, authoritative — the submodule pins a commit).
@@ -165,8 +167,9 @@ Phases 0–4 are **done** (each verified `pytest tests/` green); full detail in
 - ✅ Phase 2 — pruned unreferenced learning artifacts.
 - ✅ Phase 3 — restructure: `05_batch_processing/` → `spark/`, mechanical moves only.
 - ✅ Phase 4 — DRY'd config to env vars; stable credentials path; parametrized ingest window.
-- ⏳ Phase 5 — document: reconcile this file + README to the final structure and the
-  retired-account reality. *Done so far:* docs reconciled; branch pushed to origin.
+- ⏳ Phase 5 — document: reconcile this file + README to the final structure, and to
+  running without a provisioned GCP project. *Done so far:* docs reconciled; branch
+  pushed to origin.
 
 ## Current work + the Decision Register
 

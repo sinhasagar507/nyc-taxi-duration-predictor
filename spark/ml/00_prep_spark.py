@@ -2,7 +2,7 @@
 Phase 1 — Spark data prep for the fare-prediction model.
 
 Reads the local `fact_trips/` parquet backup (128.78M rows, the
-dbt-built fact table exported before the GCP account lapsed), applies the data-quality
+dbt-built fact table exported from BigQuery), applies the data-quality
 guards and cap logic from the ML handoff note, derives the Looker-only calculated
 fields (fare_capped, distance_capped, trip_duration_min, temp_band, is_airport_trip),
 and writes two stratified samples for downstream single-machine modeling:

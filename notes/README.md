@@ -10,9 +10,9 @@ the inherited DataTalksClub DE-Zoomcamp lesson material.
   carries the rule that enforces it.
 * [Repository audit, 2026-08-22](2026-08-22-repo-audit.md) — the open-work
   checklist and its attack order.
-* [GCP reference](gcp-reference.md) — bucket and dataset layout for the retired
-  account, plus the test layout and the E2E smoke steps.
-* [GCP account migration runbook](MIGRATION_RUNBOOK.md) — the login/billing steps
+* [GCP reference](gcp-reference.md) — the bucket and dataset layout the DAGs and dbt
+  models expect, plus the test layout and the E2E smoke steps.
+* [GCP project setup runbook](gcp-setup-runbook.md) — the login, billing and IAM steps
   only the owner can run.
 * [Dashboard development plan v3](2026-05-24-Dashboard-development-plan-v3.md) —
   the six-page Looker Studio plan.

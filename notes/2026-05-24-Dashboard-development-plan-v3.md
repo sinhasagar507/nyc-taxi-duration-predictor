@@ -1,6 +1,6 @@
 ## Project context
 
-We are building a multi-page Looker Studio dashboard on NYC taxi data (2015–2016) joined with daily climate data. The pipeline is dbt + BigQuery. All analysis is done from `dtc-de-project-492321.dbt_prod`. The primary fact table is `fact_trips`.
+We are building a multi-page Looker Studio dashboard on NYC taxi data (2015–2016) joined with daily climate data. The pipeline is dbt + BigQuery. All analysis is done from `$GCP_PROJECT_ID.dbt_prod`. The primary fact table is `fact_trips`.
 
 **This is v3 of the plan.** It reconciles v2 (2026-05-17) with the visual design mockup in `looker_climate_template.html` (added to project files on 2026-05-24). The HTML mockup is the canonical design reference for layout, colors, typography, and chart selection. Where the v2 plan added analytical depth beyond the mockup, those additions are kept.
 
@@ -12,14 +12,14 @@ We work one day at a time, one piece at a time, as a senior analyst would. Alway
 
 | Item | Value |
 |---|---|
-| BigQuery project | `dtc-de-project-492321` |
+| BigQuery project | `$GCP_PROJECT_ID` |
 | Primary dataset | `dbt_prod` |
-| Main fact table | `dtc-de-project-492321.dbt_prod.fact_trips` |
-| Staging — Green | `dtc-de-project-492321.dbt_prod.stg_green_taxi_data` |
-| Staging — Yellow | `dtc-de-project-492321.dbt_prod.stg_yellow_taxi_data` |
-| Zones dim | `dtc-de-project-492321.dbt_prod.dim_zones` |
-| Climate staging | `dtc-de-project-492321.dbt_prod.stg_climate_data` |
-| Revenue dim | `dtc-de-project-492321.dbt_prod.dim_monthly_zones_revenue` |
+| Main fact table | `$GCP_PROJECT_ID.dbt_prod.fact_trips` |
+| Staging — Green | `$GCP_PROJECT_ID.dbt_prod.stg_green_taxi_data` |
+| Staging — Yellow | `$GCP_PROJECT_ID.dbt_prod.stg_yellow_taxi_data` |
+| Zones dim | `$GCP_PROJECT_ID.dbt_prod.dim_zones` |
+| Climate staging | `$GCP_PROJECT_ID.dbt_prod.stg_climate_data` |
+| Revenue dim | `$GCP_PROJECT_ID.dbt_prod.dim_monthly_zones_revenue` |
 | Dashboard tool | Looker Studio (BigQuery connector) |
 | Design reference | `looker_climate_template.html` (in project files) |
 

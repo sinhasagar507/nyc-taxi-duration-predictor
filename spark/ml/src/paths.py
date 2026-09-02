@@ -33,8 +33,8 @@ BACKUP_DIR_ENV = "MIGRATION_BACKUP_DIR"
 # Beside the repo, not inside it. Item 10's whole point.
 DEFAULT_BACKUP_DIR = REPO_ROOT.parent / "nyc_taxi_migration_backup"
 
-# The one subdirectory the prep reads: the dbt-built fact table, exported before
-# the GCP account lapsed.
+# The one subdirectory the prep reads: the dbt-built fact table, exported from
+# BigQuery.
 FACT_TRIPS_SUBDIR = "fact_trips"
 
 

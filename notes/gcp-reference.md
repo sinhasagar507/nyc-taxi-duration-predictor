@@ -1,14 +1,16 @@
-# GCP Infrastructure — reference only (account retired)
+# GCP Infrastructure — reference layout
 
-Moved out of CLAUDE.md 2026-08-22. The GCP project this pipeline originally ran against
-has been **retired** (trial exhausted / account disabled). Do not treat any resource
-below as live, and do not expect credentials to be present. The marts were backed up
-locally and to GCS before shutdown. The local copy sits **outside the repository**
-since audit item 10 (2026-09-01), in the sibling `nyc_taxi_migration_backup/`;
-`spark/ml/src/paths.py` resolves it and `MIGRATION_BACKUP_DIR` overrides it. Identifiers (project ID,
-service account, keyfile) were removed on purpose — supply your own via
-`GOOGLE_APPLICATION_CREDENTIALS` if/when reconnecting to a live project. The layout is
-retained as a structural reference for the data model.
+Moved out of CLAUDE.md 2026-08-22. **No GCP project is provisioned.** Do not treat any
+resource below as live, and do not expect credentials to be present.
+
+The dbt-built marts are held locally, **outside the repository** since audit item 10
+(2026-09-01), in the sibling `nyc_taxi_migration_backup/`; `spark/ml/src/paths.py`
+resolves that path and `MIGRATION_BACKUP_DIR` overrides it. That local copy is what lets
+the fare model run with no cloud.
+
+Identifiers (project ID, service account, keyfile) are left out on purpose — supply your
+own via `GOOGLE_APPLICATION_CREDENTIALS` plus `GCP_PROJECT_ID` / `GCP_GCS_BUCKET`. The
+layout below is retained as a structural reference for the data model.
 
 ## GCS bucket layout
 
