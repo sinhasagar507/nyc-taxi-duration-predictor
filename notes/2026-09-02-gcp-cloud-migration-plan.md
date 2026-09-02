@@ -196,9 +196,15 @@ gets `{{ config(partition_by={"field": "pickup_datetime", "data_type": "timestam
 Monthly, not daily: 128.8M rows over 730 days is ~176K rows a day — under BigQuery's own
 several-GB-per-partition guidance, so daily partitions would be many and thin. Cluster on
 the two zone IDs because `od_corridor` and the dashboard's corridor/borough-flow pages
-filter on them; `service_type` has two values and is not worth a slot. **Whether
-`fact_trips.sql` already sets any of this was not checked** — read the config block
-before writing it.
+filter on them; `service_type` has two values and is not worth a slot.
+
+**Read 2026-09-02, as this bullet asked.** `models/core/fact_trips.sql` line 1 is
+`{{ config(materialized='table') }}` and nothing else: no `partition_by`, no `cluster_by`,
+so the change is additive and overwrites no existing choice. The three columns it names all
+exist in the model's own `select` (`tu.pickup_datetime`, `tu.pickup_locationid`,
+`tu.dropoff_locationid`), and `pickup_datetime` really is a timestamp — the staging models
+build it with `cast(lpep_pickup_datetime as timestamp)`, so `"data_type": "timestamp"` is
+right and not assumed. The patch is prepared and dry-run in M0.
 
 **Rejected:** BigQuery Editions / slot reservations (on-demand with a 1 TiB free month is
 the right model for a pipeline that builds marts a handful of times).
@@ -476,8 +482,28 @@ config that a test can pin, the failing test lands first.
       `git submodule update --remote dbt/ny_taxi_analytics && git add dbt/ny_taxi_analytics`.
       The moment the pointer bumps, the two `xfail(strict=True)` guards in
       `tests/unit/test_stale_ids.py` fail hard — that failure is the instruction to delete
-      the marker. The `fact_trips` partition/cluster half of this bullet is untouched and
-      still needs 2.2 read against the current block.
+      the marker.
+
+      **The `fact_trips` half, also prepared.** 2.2 said to read the config block before
+      writing it. Read: line 1 is `{{ config(materialized='table') }}` and nothing else, so
+      this adds and overwrites nothing. Dry-run against `d11219d`; it applies cleanly.
+
+      ```diff
+      --- a/models/core/fact_trips.sql
+      +++ b/models/core/fact_trips.sql
+      -{{ config(materialized='table') }}
+      +{{ config(
+      +    materialized='table',
+      +    partition_by={"field": "pickup_datetime", "data_type": "timestamp",
+      +                  "granularity": "month"},
+      +    cluster_by=["pickup_locationid", "dropoff_locationid"]
+      +) }}
+      ```
+
+      All three columns exist in the model's own `select`, and `pickup_datetime` is a real
+      timestamp — staging builds it with `cast(lpep_pickup_datetime as timestamp)` — so the
+      `data_type` is verified, not assumed. Both halves go in **one** submodule PR, then one
+      pointer bump here.
 - [x] Update `.github/workflows/dbt.yml` to export `GCP_PROJECT_ID` if it does not already.
       **Done `c091af8`:** it did not, so every CI run silently targeted the dead fallback
       project. The auth step now resolves it — `vars.GCP_PROJECT_ID` first, else the
