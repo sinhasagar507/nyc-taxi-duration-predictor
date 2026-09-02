@@ -1,5 +1,7 @@
 # ML Handoff Context — Urban Mobility Insights → Fare Prediction Model
 
+**Invoke when:** you need data provenance, baselines, anomalies, or feature correlations for the fare model.
+
 **Purpose:** Consolidated context for the downstream PyTorch fare prediction pipeline, exported from the Looker Studio dashboard build (Claude on claude.ai) for local development in Claude Code / VSCode.
 
 **Source project:** Urban Mobility Insights — NYC taxi dashboard (Yellow + Green, 2015–2016, 128.8M trips) enriched with daily climate data.

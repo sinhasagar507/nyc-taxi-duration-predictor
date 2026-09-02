@@ -1,5 +1,7 @@
 # GCP Project Setup Runbook
 
+**Invoke when:** the owner is provisioning a GCP project, or credentials are missing.
+
 This runbook is the **only part that requires your Google login and billing** — everything
 else an agent can do for you. Run it when you want to point the pipeline at a live GCP
 project.

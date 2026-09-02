@@ -176,6 +176,10 @@ Phases 0–4 are **done** (each verified `pytest tests/` green); full detail in
 **Open work** lives in `notes/2026-08-22-repo-audit.md` — 12 items from the 2026-08-22
 audit, with the attack order. Read it before starting new work; check items off there.
 
+**Notes are pulled, not read wholesale (D-010).** Every project document carries an
+`Invoke when:` line, and `notes/README.md` indexes all of them by trigger. Scan that index;
+read only what fires. New notes get the line when they are created.
+
 **Settled and parked decisions** live in `notes/decisions.md`, each with its reason.
 **Enforce it.** When the user proposes anything that contradicts a **LOCKED** entry, or
 starts a **DEFERRED** item without an explicit ask, **stop before acting** — even

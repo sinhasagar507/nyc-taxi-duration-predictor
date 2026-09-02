@@ -1,5 +1,7 @@
 ## Project context
 
+**Invoke when:** working on the Looker Studio dashboard.
+
 We are building a multi-page Looker Studio dashboard on NYC taxi data (2015–2016) joined with daily climate data. The pipeline is dbt + BigQuery. All analysis is done from `$GCP_PROJECT_ID.dbt_prod`. The primary fact table is `fact_trips`.
 
 **This is v3 of the plan.** It reconciles v2 (2026-05-17) with the visual design mockup in `looker_climate_template.html` (added to project files on 2026-05-24). The HTML mockup is the canonical design reference for layout, colors, typography, and chart selection. Where the v2 plan added analytical depth beyond the mockup, those additions are kept.

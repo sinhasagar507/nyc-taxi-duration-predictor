@@ -1,5 +1,7 @@
 # Decision Register
 
+**Invoke when:** always — before proposing anything. This file is enforced by the guard rule in `CLAUDE.md`.
+
 Settled decisions for this repository. `CLAUDE.md` carries the guard rule that enforces
 this file; this file carries the entries.
 
@@ -99,3 +101,49 @@ Status. The Why is the important field — it is what a future session quotes ba
   fetch a rule it has never seen; state can pull, because a task knows when it needs it.
 - **Reopen if:** the official guidance changes.
 - **Status:** LOCKED (2026-08-22)
+
+## D-009 — Measure before you assert; label what you could not measure
+
+- **Decision:** when a document, plan, or test depends on a number or on a library's
+  behaviour, **measure it at the moment you write it down.** Do not copy a number out of an
+  older document. Do not extrapolate across an order of magnitude. Before recording a
+  result, test the obvious objection to it. If you cannot measure something, write
+  **UNVERIFIED** beside it and state what you tried — never quietly guess, and never
+  silently drop the claim either.
+- **Why:** this repository has paid for the opposite four times.
+  - `d83141b` — acted on a believed statement and kept the raw `trip_distance`, which
+    disabled the p99 cap and let one corrupt odometer row produce a $9.29M prediction.
+  - §5b's corridor drop — "MLlib has no `TargetEncoder`" was false for the installed
+    version and was never checked against it. A whole baseline shipped without a feature it
+    could have had.
+  - Audit item 12 — the 2026-08-22 audit copied a stale "known, untouched" status line. The
+    defect had been fixed three weeks earlier by `fc87020`. A solved problem sat on two open
+    lists for a month.
+  - `DEFAULT_SMOOTHING` — chosen at 20 from a leakage bound, then measured worst-but-one
+    across seven arms. 5 won. The bound was an argument; the sweep was evidence.
+  The failure mode is always the same shape: a plausible statement, never checked, that
+  later work builds on. Measuring costs minutes. Each of the four cost days.
+- **How to apply:** a number in a checklist is re-measured when the checklist is written. A
+  library behaviour is verified against the *installed* version, not the documented one. A
+  hyperparameter chosen from theory is swept before it is reported. A negative result is
+  recorded, not discarded — see the `SELECT *` projection note in `01_mllib_baseline.py`.
+- **Reopen if:** never expected.
+- **Status:** LOCKED (2026-09-02)
+
+## D-010 — Every note declares when to invoke it
+
+- **Decision:** each project document in `notes/` carries an **`Invoke when:`** line near
+  the top, naming the trigger that makes it relevant. `notes/README.md` indexes every
+  project document together with that trigger. A session scans the index, then reads only
+  the notes whose trigger fires. New notes get the line when they are created.
+- **Why:** D-008 puts state in `notes/` and says state is *pulled*, not pushed. A pull only
+  works if the puller can tell what to pull without reading everything first. `notes/` now
+  holds eight project documents, one of them 819 lines. Reading them all every session
+  defeats the point of moving them out of `CLAUDE.md`. A trigger line is the smallest thing
+  that makes a pull decidable.
+- **How to apply:** write the trigger as a condition, not a description — "before any
+  `terraform apply`" beats "about Terraform". If a note has no trigger worth writing, that
+  is a signal the note is finished and belongs in history rather than in `notes/`.
+- **Reopen if:** the index stops being maintained, at which point the mechanism has failed
+  and something simpler should replace it.
+- **Status:** LOCKED (2026-09-02)

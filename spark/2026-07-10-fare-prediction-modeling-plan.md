@@ -1,5 +1,7 @@
 # Fare Prediction — Classical ML Modeling Plan
 
+**Invoke when:** any question about the fare model, the feature contract, the sweep, or the sealed holdout.
+
 **Created:** 2026-07-10
 **Author:** Sagar Sinha (with Claude Code)
 **Companion doc:** `spark/2026-07-04-ml-handoff-context.md` (data provenance, baselines, anomalies, feature correlations)

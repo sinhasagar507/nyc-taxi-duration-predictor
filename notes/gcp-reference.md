@@ -1,5 +1,7 @@
 # GCP Infrastructure — reference layout
 
+**Invoke when:** you need the bucket or dataset layout, the test layout, or the E2E smoke steps.
+
 Moved out of CLAUDE.md 2026-08-22. **No GCP project is provisioned.** Do not treat any
 resource below as live, and do not expect credentials to be present.
 

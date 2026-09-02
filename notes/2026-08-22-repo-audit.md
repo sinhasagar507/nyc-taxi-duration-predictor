@@ -1,5 +1,7 @@
 # Repository Audit — 2026-08-22
 
+**Invoke when:** starting new work, or looking for what is still open.
+
 Full-repo audit run 2026-08-22 (session: audit only, no files changed by the audit itself).
 Tests at audit time: 258 passed, 1 skipped. Work each item in a **fresh session**; check it
 off here when done. The three standing Deferred items in CLAUDE.md (PR,

@@ -1,5 +1,7 @@
 # GCP Cloud Migration Plan
 
+**Invoke when:** any cloud, Terraform, Dataproc, BigQuery or cost question, and before spending anything.
+
 **Created:** 2026-09-02
 **Author:** Sagar Sinha (with Claude Code)
 **Answers:** audit item 5 (`notes/2026-08-22-repo-audit.md`) — "record a decision: provision a
