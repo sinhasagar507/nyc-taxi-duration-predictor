@@ -1,5 +1,7 @@
 # CLAUDE.md
 
+@~/.claude/global_rules.md
+
 Guidance for AI agents (and humans) working in this repository.
 
 ## Working Agreement — one step at a time, reviewed before the next
@@ -60,14 +62,21 @@ Verified stack: dbt-core 1.11 + dbt-bigquery 1.11 on Python 3.12.
 The Phase-3 restructure is done. Top level: `terraform/` (infra — import before apply),
 `airflow/` (DAGs + compose stack), `dbt/` (submodule + profiles.yml + requirements),
 `docker/dev/` (dev container), `spark/` (batch + ML, `spark/ml/` is the fare model),
-`bigquery/` (SQL reference), `tests/`, `secrets/` (gitignored), `notes/` (docs),
+`bigquery/` (two exported CSVs; the SQL reference it once held is gone), `tests/`,
+`secrets/` (gitignored), `notes/` (docs),
 `.github/workflows/dbt.yml` (CI).
 
-**Artifacts to retire** (learning leftovers, not pipeline components):
-`03_data_warehouse_bigquery/`, `04_analytics_engineering/`, `docker_nana_tutorial/`,
-`gcs_storage/`, `spark_data/`, `google-cloud-sdk/` (vendored SDK), `project_architecture/`,
-and `bigquery/queries/*.sql` (legacy homework against the dead `dtc-de-course-440404.nytaxi`
-project — FHV/2023-24/BQML scratch, not part of the current 2015-16 duration pipeline).
+**Artifacts to retire** (learning leftovers, not pipeline components). Most of the
+original list is already gone — `03_data_warehouse_bigquery/`, `04_analytics_engineering/`,
+`docker_nana_tutorial/`, `gcs_storage/`, `spark_data/`, `google-cloud-sdk/` (vendored SDK)
+and `bigquery/queries/*.sql` no longer exist. Audit item 9 (2026-09-01) pruned the course
+leftovers out of `spark/`: the `03_test`…`09_spark_gcs` notebooks, `Demo Spark notebook`,
+`head.csv`, `tmp/`, `lib/` (39 MB GCS connector jar) and `local_spark/`. What is left:
+
+- `project_architecture/` — parked by **D-003**. Do not raise it as a next step.
+- `spark/nyc_taxi_duration_prediction*.ipynb` and `spark/pyspark_r_equivalent_toolkit.ipynb`
+  — pre-pivot duration/XGBoost work and an R-equivalence toolkit. Kept on purpose; the
+  audit never listed them, and the owner decides their fate.
 
 ## Environments — dev container vs Airflow vs host venv
 

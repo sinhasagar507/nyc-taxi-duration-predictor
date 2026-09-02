@@ -29,7 +29,6 @@ SCANNED_FILES = [
     ".github/workflows/dbt.yml",
     "spark/bigquery_connector.py",
     "spark/pyspark_bigquery_hybrid.py",
-    "spark/local_spark/pyspark_bigquery_debug.py",
 ]
 
 

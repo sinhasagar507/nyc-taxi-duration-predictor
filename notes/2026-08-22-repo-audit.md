@@ -41,9 +41,17 @@ off here when done. The three standing Deferred items in CLAUDE.md (PR,
 
 ## D. Implementation drawbacks
 
-- [ ] 9. `spark/` mixes course notebooks (`03_test.ipynb` … `09_spark_gcs.ipynb`,
+- [x] 9. `spark/` mixes course notebooks (`03_test.ipynb` … `09_spark_gcs.ipynb`,
       `Demo Spark notebook.ipynb`, `head.csv`, `tmp/`, `lib/` 39 MB, `local_spark/`)
       with the production `spark/ml/` code. Extend the retire list and prune.
+      **Done 2026-09-01.** Pruned exactly that list (39 MB freed, all of it `lib/`).
+      `spark/local_spark/pyspark_bigquery_debug.py` also left `SCANNED_FILES` in
+      `tests/unit/test_credential_decoupling.py`. The CLAUDE.md retire list is rewritten
+      to what actually remains — most of the original entries no longer exist on disk.
+      **Left in place, deliberately:** `nyc_taxi_duration_prediction.ipynb`,
+      `nyc_taxi_duration_prediction_1.ipynb`, `pyspark_r_equivalent_toolkit.ipynb`. The
+      audit never named them, and the first two are the pre-pivot duration work the owner
+      still has plans for. Decide them separately.
 - [ ] 10. `migration_backup/` (7.1 GB) sits inside the working tree. Move it outside
       the repo.
 - [ ] 11. Loose root documents (`2026-05-24-Dashboard-development-plan-v3.md`,
