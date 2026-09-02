@@ -61,11 +61,22 @@ MLLIB_CATEGORICAL_COLUMNS = tuple(
 )
 
 # Spark's TargetEncoder does not cross-fit, so a training row's own target
-# enters its own feature. `smoothing` is the only lever against that. See
-# `self_leakage_weight` for the arithmetic and §5b for the argument: 20 holds a
-# single-trip corridor's self-weight to 1/21 = 4.8%, and leaves a 1,000-trip
-# corridor essentially untouched at 98%.
-DEFAULT_SMOOTHING = 20.0
+# enters its own feature. `smoothing` is the only lever against that, and
+# `self_leakage_weight` below is the arithmetic.
+#
+# This was 20 first, from the bound: 20 holds a single-trip corridor's
+# self-weight to 1/21 = 4.8% while leaving a 1,000-trip corridor at 98%. The
+# 2026-09-01 sweep overruled it. Seven arms on identical rows (200,000 rows,
+# 3 folds, maxIter=20), mean MAE:
+#
+#     dropped 0.6329 | s=5 0.6650 | s=1 0.6713 | s=0.067 0.6908
+#             | s=100 0.7094 | s=20 0.7102 | s=500 0.7236
+#
+# s=5 is the best encoded setting, so it is the default — even though it lets a
+# singleton read back 16.7% of its own fare. Note what the first column says:
+# **no smoothing beat dropping the corridor**, so this is the best of a losing
+# set. Plan §5b carries the reading.
+DEFAULT_SMOOTHING = 5.0
 
 # Everything that goes into the VectorAssembler unscaled. sklearn keeps numerics
 # and binaries apart because StandardScaler should not touch a 0/1 flag; GBT

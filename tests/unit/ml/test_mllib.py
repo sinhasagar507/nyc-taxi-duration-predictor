@@ -275,10 +275,19 @@ class TestSmoothing:
         smoothing, each of those rows reads its own fare back as a feature."""
         assert mllib.self_leakage_weight(1, 0.0) == 1.0
 
-    def test_default_smoothing_bounds_singleton_leakage_under_five_percent(self):
-        """The criterion behind DEFAULT_SMOOTHING, stated as a test rather than
-        left in a commit message."""
-        assert mllib.self_leakage_weight(1, mllib.DEFAULT_SMOOTHING) < 0.05
+    def test_default_smoothing_is_the_measured_best_not_the_theoretical_one(self):
+        """DEFAULT_SMOOTHING was 20 first, chosen to hold a singleton's
+        self-leakage under 5%. The data overruled it: across seven arms on
+        identical rows, s=5 scored best of every encoded setting (MAE 0.6650
+        against 0.7102 at s=20), even though it lets a singleton read back
+        16.7% of its own fare. A leakage bound is an argument; a measurement
+        beats it. Plan §5b carries the full sweep.
+
+        The bound is not thereby vindicated at any value — no smoothing beat
+        dropping the corridor outright (0.6329). This constant is the best of
+        a losing set, and the plan says so."""
+        assert mllib.DEFAULT_SMOOTHING == 5.0
+        assert mllib.self_leakage_weight(1, mllib.DEFAULT_SMOOTHING) > 0.05
 
     def test_self_weight_falls_as_the_category_grows(self):
         """Large corridors keep their signal; only small ones are shrunk toward
