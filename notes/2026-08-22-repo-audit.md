@@ -7,13 +7,21 @@ off here when done. The three standing Deferred items in CLAUDE.md (PR,
 
 ## A. Broken repository state — fix first
 
-- [ ] 1. Stale cherry-pick sequencer in `.git` — `git status` says "cherry-pick in
+- [x] 1. Stale cherry-pick sequencer in `.git` — `git status` says "cherry-pick in
       progress"; the todo picks (`e5f29bd`, `38283a2`) are already on the branch.
       Fix with `git cherry-pick --quit` (NOT `--abort`).
+      **Verified clear 2026-09-01:** no `.git/sequencer`, no `.git/CHERRY_PICK_HEAD`,
+      `git status` clean. Cleared in an earlier session; the box was never ticked.
 - [ ] 2. 14 commits unpushed on `refactor/wire-pipeline` — the whole Phase-4/4b ML
       program exists only locally. Push after clearing item 1.
-- [ ] 3. Uncommitted edit in `spark/2026-07-10-fare-prediction-modeling-plan.md` —
+      **Partly overtaken, still open 2026-09-01.** The branch reached `origin` at some
+      point after the audit, so the backlog is no longer 14. It stands at 7, six of them
+      from the 2026-09-01 session. **The owner pushes** — that session was explicitly
+      instructed not to touch any remote.
+- [x] 3. Uncommitted edit in `spark/2026-07-10-fare-prediction-modeling-plan.md` —
       the 2026-08-09 leakage-verification write-up. Commit it.
+      **Done before 2026-09-01** — landed as `d7e5ea8`, "docs(ml): measure the sklearn
+      target-encoding half instead of asserting it". The box was never ticked.
 
 ## B. Vision gaps
 
@@ -90,11 +98,16 @@ off here when done. The three standing Deferred items in CLAUDE.md (PR,
 
 ## Attack order
 
-1. Items 1–3 (git state) — one short cleanup session.
-2. Items 5–6 + 8 — one decision document.
-3. Item 4 — docs reconciliation.
-4. Items 9–11 — prune + relocate.
-5. Resume the modeling plan at MLlib row 2 (Phase 4b §5b); item 12 rides along there.
+1. ✅ Items 1–3 (git state) — one short cleanup session. Item 2 is the owner's to finish.
+2. ⬜ Items 5–6 + 8 — one decision document. **Still open.**
+3. ✅ Item 4 — docs reconciliation. `CASE_STUDY.md` waits on D-005.
+4. ✅ Items 9–11 — prune + relocate. Done 2026-09-01. `CASE_STUDY.md` held by D-005.
+5. ✅ Resume the modeling plan at MLlib row 2 (Phase 4b §5b); item 12 rides along there.
+   Done 2026-09-01. Phase 4b is complete; item 12 turned out to be already fixed.
+
+**What is left after 2026-09-01:** items 2, 5, 6, 7, and the `CASE_STUDY.md` half of 11.
+Items 5, 6 and 8 are still one decision document, and it is now the front of the queue —
+item 5 (the GCP successor) also unblocks D-006 and the §5c cloud run.
 
 ## Session log — 2026-08-22
 
@@ -106,3 +119,25 @@ off here when done. The three standing Deferred items in CLAUDE.md (PR,
 - Created `notes/decisions.md`, the Decision Register, and put its guard rule in
   `CLAUDE.md`. Eight seed entries: D-001 … D-008.
 - Nothing committed. The git-state items (1–3) remain the cleanup session's job.
+
+## Session log — 2026-09-01
+
+Attack-order steps 4 and 5, run end to end in one session at the owner's request (the
+per-step review gate was suspended for that session only; nothing was pushed).
+
+- **Item 9** — pruned the course leftovers out of `spark/`; 39 MB freed, all of it the
+  vendored GCS connector jar. Rewrote the CLAUDE.md retire list, six of whose eight
+  entries no longer existed on disk.
+- **Item 10** — moved the 7.1 GB `fact_trips` backup to the repo's sibling
+  `nyc_taxi_migration_backup/`. The hard-coded path in `00_prep_spark.py` became policy
+  in the new `spark/ml/src/paths.py` (TDD).
+- **Item 11** — three of four loose root documents moved to `notes/`, and
+  `notes/README.md` grew a Project documents index. `CASE_STUDY.md` stayed put under D-005.
+- **Item 12** — closed without work. The defect was fixed on 2026-08-01 by `fc87020`;
+  this audit had copied a stale status line rather than re-measuring.
+- **Phase 4b row 2** — the MLlib GBT baseline with `od_corridor` target-encoded. It scored
+  *worse* than the corridor-dropped ablation, and no smoothing value recovered it. Written
+  up in the modeling plan §5b as a negative result with the seven-arm sweep behind it.
+
+Tests: 257 unit passed, 1 skipped. The 9 integration failures are pre-existing — they
+target the retired GCP account and fail identically before and after this session.
