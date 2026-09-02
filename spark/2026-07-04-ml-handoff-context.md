@@ -139,4 +139,4 @@ Full anomaly detail (root causes, resolutions, discovery dates) available in sou
 
 ## 8. Reference — full 10-day dashboard build status (for context only, not needed for ML work)
 
-All 6 dashboard pages complete. Day 9–10 global theming/polish in progress (cosmetic only, no data implications). Active plan doc: `2026-05-24-Dashboard-development-plan-v3.md`. Not needed for the ML pipeline but included here in case Claude Code needs the full provenance trail.
+All 6 dashboard pages complete. Day 9–10 global theming/polish in progress (cosmetic only, no data implications). Active plan doc: `notes/2026-05-24-Dashboard-development-plan-v3.md`. Not needed for the ML pipeline but included here in case Claude Code needs the full provenance trail.

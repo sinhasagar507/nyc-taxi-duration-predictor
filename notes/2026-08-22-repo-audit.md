@@ -63,9 +63,18 @@ off here when done. The three standing Deferred items in CLAUDE.md (PR,
       guard in `test_docker_runtime.py` stays — it costs nothing and still catches a
       restore. Docs updated in CLAUDE.md, `notes/gcp-reference.md`, `MIGRATION_RUNBOOK.md`
       and the modeling plan.
-- [ ] 11. Loose root documents (`2026-05-24-Dashboard-development-plan-v3.md`,
+- [~] 11. Loose root documents (`2026-05-24-Dashboard-development-plan-v3.md`,
       `project-status-phase5.pdf`, `MIGRATION_RUNBOOK.md`, `CASE_STUDY.md`) have no
       home. Relocate to `notes/`.
+      **Three of four done 2026-09-01.** The dashboard plan, the runbook and the status
+      PDF moved to `notes/`. `notes/README.md` was the inherited course-notes index and
+      indexed none of the project's own documents; it now opens with a **Project
+      documents** section that lists them, so "no home" is fixed for the index as well as
+      the directory. The handoff note's pointer at the dashboard plan was repathed.
+      **`CASE_STUDY.md` stays at the repository root.** D-005 is LOCKED and says to leave
+      it untouched until modeling Phase 5 scores the sealed holdout. Moving it is not a
+      rewrite, but the entry says *untouched*, and the file's fate — rewrite or delete —
+      is decided by that same phase. Move it then, in the change that settles it.
 - [ ] 12. Known model defect unassigned: design matrix rank 25/27 (dummy trap,
       cond ≈ 4e15), coefficients unstable. Assign it a phase in the modeling plan.
 
