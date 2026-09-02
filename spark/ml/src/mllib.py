@@ -12,7 +12,7 @@ Three contracts matter:
   - `od_corridor` is **target-encoded**, in its own column group. An earlier
     version of this module dropped it and justified the drop with "MLlib has no
     TargetEncoder". That was false for this project: `TargetEncoder` arrived in
-    Spark 4.0.0 and we run 4.1.2, so the 2026-08-08 baseline shipped without a
+    Spark 4.0.0 and we run 4.0.1, so the 2026-08-08 baseline shipped without a
     feature it could have had. The parity rule of §5b now governs — whatever the
     sklearn sweep encodes, MLlib encodes, because a gap that comes from a
     missing feature measures nothing anyone wants to know. The corridor-dropped

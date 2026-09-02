@@ -210,7 +210,7 @@ itself is a script run, like Phase 1.
 **Correction — 2026-08-09: `od_corridor` stays in.** An earlier draft of this section
 dropped the corridor and justified the drop with "MLlib has no `TargetEncoder`". That is
 false for this project. `pyspark.ml.feature.TargetEncoder` was added in **Spark 4.0.0** and
-we run **4.1.2**. The claim came from Spark 3.x and was never checked against the installed
+we run **4.0.1**. The claim came from Spark 3.x and was never checked against the installed
 version, so the 2026-08-08 baseline shipped without a feature it could have had. Same
 failure mode as `d83141b`: acting on a believed statement instead of a verified fact.
 
@@ -604,7 +604,10 @@ now would churn Docker mounts and import paths for cosmetics — not worth it.
       - Two Spark 4.1.2 facts landed in the code as a result: `targetType` defaults to
         `"binary"` and must be set for a dollar target, and `TargetEncoderModel` copies the
         indexer's nominal metadata onto its numeric output, which makes `VectorAssembler`
-        call the feature categorical and GBT fail on `maxBins`.
+        call the feature categorical and GBT fail on `maxBins`. **Both re-measured on
+        Spark 4.0.1 on 2026-09-02** and both still hold, so neither is a 4.1-only quirk;
+        the explicit `targetType="continuous"` and the demoting `SQLTransformer` stay
+        mandatory on the Dataproc Serverless runtime too. See the migration plan 2.4.
 - [ ] **Cloud full-scale run (§5c, decided 2026-08-04).** `sample_full` (12.75M) for
       **both** sklearn and MLlib. Local machine measured at 4.8 GB frame / ~8.2 h for the
       whole sweep on an 18 GiB M3 Pro; scope the cloud run to the top 4 + corridor-dropped

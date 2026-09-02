@@ -54,7 +54,7 @@ class TestColumnGroups:
 
     The earlier contract dropped the corridor and justified it with "MLlib has
     no TargetEncoder". That is false for this project: `TargetEncoder` arrived
-    in Spark 4.0.0 and we run 4.1.2. The parity rule in plan §5b now governs —
+    in Spark 4.0.0 and we run 4.0.1. The parity rule in plan §5b now governs —
     whatever the sklearn sweep encodes, MLlib encodes — so the corridor gets its
     own group rather than an exclusion.
     """

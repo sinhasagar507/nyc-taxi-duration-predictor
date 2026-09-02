@@ -40,7 +40,7 @@ Design notes:
   - `od_corridor` is **target-encoded**, not dropped. The 2026-08-08 run of this
     script dropped it on the premise that "MLlib has no TargetEncoder", which is
     false here: `pyspark.ml.feature.TargetEncoder` arrived in Spark 4.0.0 and we
-    run 4.1.2. That run stands as the corridor ablation (row 3 of §5b), still
+    run 4.0.1. That run stands as the corridor ablation (row 3 of §5b), still
     reproducible with `--drop-corridor`. The parity rule governs the baseline:
     whatever the sklearn sweep encodes, this encodes.
   - Spark's `TargetEncoder` does **not** cross-fit, so a training row's own fare
@@ -150,8 +150,8 @@ def build_pipeline(
     `handle_unknown="ignore"` gives all zeros), but boroughs and service_type
     are closed sets, so it should never fire.
 
-    **The SQLTransformer is not cosmetic.** Spark 4.1.2's `TargetEncoderModel`
-    copies the *indexer's* nominal `ml_attr` metadata onto its own output —
+    **The SQLTransformer is not cosmetic.** Spark's `TargetEncoderModel` copies
+    the *indexer's* nominal `ml_attr` metadata onto its own output —
     listing the encoded fare means where the category labels used to be. The
     column holds continuous dollars, but `VectorAssembler` reads that metadata
     and marks the feature categorical, so the tree tries to bin it and dies:
