@@ -14,9 +14,10 @@ That is wrong twice over:
     `terraform apply` gets a plan built from someone else's inventory.
 
 **2. The dbt submodule's staging schemas must not hardcode a project.** Both source
-definitions name a literal project as their `database:`. The env var `GCP_PROJECT_ID` is
-the single source of truth everywhere else in this repository, and dbt is the one place
-that ignores it.
+definitions named a literal project as their `database:`. The env var `GCP_PROJECT_ID` is
+the single source of truth everywhere else in this repository, and dbt was the one place
+that ignored it. Fixed upstream in `305868f` on 2026-09-02; the guard stays so a future
+edit cannot put the literal back unnoticed.
 
 This one is a **vocabulary collision**, not a typo. dbt names things generically and
 BigQuery names them concretely, so the same two concepts carry two sets of words:
@@ -104,24 +105,21 @@ class TestTerraformStateIsNotTracked:
 
 
 class TestSubmoduleSchemasUseTheEnvVar:
-    """Blocked on an upstream change, so these are `xfail(strict=True)`.
+    """Fixed upstream on 2026-09-02; this is now a regression guard.
 
-    The fix belongs in github.com/sinhasagar507/ny_taxi_analytics, and only the owner
-    pushes there. `strict=True` is the point: the moment the submodule pointer bumps to a
-    commit carrying the fix, these turn from xpass into a hard failure, and that failure is
-    the instruction to delete this marker. A plain skip would go quiet forever and the
-    defect would survive its own fix.
+    These were `xfail(strict=True)` while the fix was blocked in
+    github.com/sinhasagar507/ny_taxi_analytics, which only the owner pushes to. `strict`
+    was the point: when the submodule pointer bumped to a commit carrying the fix, both
+    turned from xpass into a hard failure, and that failure was the instruction to delete
+    the marker. A plain skip would have gone quiet forever and the defect would have
+    survived its own fix.
+
+    The mechanism worked. Upstream `305868f` deleted the `database:` line from both
+    schemas, the pointer moved off `d11219d`, and both tests reported `XPASS(strict)`.
+    The marker is gone and these now assert plainly. They stay because a future edit
+    upstream could put the literal back, and nothing else in the repository would notice.
     """
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "Known defect, blocked upstream: both staging schemas hardcode a project as "
-            "`database:`. Fix by DELETING the line in ny_taxi_analytics (it inherits the "
-            "profile's project), bump the submodule pointer, then remove this marker. "
-            "Migration plan M0."
-        ),
-    )
     @pytest.mark.parametrize("schema", ["schema_taxi.yml", "schema_climate.yml"])
     def test_staging_schema_does_not_hardcode_a_project(self, schema):
         """`database:` must resolve from GCP_PROJECT_ID like everything else does."""

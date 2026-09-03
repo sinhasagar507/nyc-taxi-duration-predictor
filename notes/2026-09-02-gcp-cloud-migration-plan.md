@@ -450,13 +450,20 @@ config that a test can pin, the failing test lands first.
       is now unreferenced, left deliberately). `terraform init -backend=false` +
       `terraform validate` → Success; no plan, no apply. The provider lock file is committed
       with darwin_arm64 *and* linux_amd64 hashes so `init` also works on the M1 VM.
-- [ ] **Upstream** in `ny_taxi_analytics`: **delete** the `database:` line from both
+- [x] **Upstream** in `ny_taxi_analytics`: **delete** the `database:` line from both
       staging schema files — *corrected 2026-09-02, see the note below;* the `fact_trips`
       partition/cluster config (2.2) after reading its current block. Merge there, then bump
       the submodule pointer here.
 
-      **BLOCKED on the owner — only they push to `ny_taxi_analytics`.** The `database:`
-      half is prepared and dry-run: it is two deletions, verified to apply cleanly against
+      **DONE 2026-09-02 — upstream `305868f`, pointer moved off `d11219d`.** The owner
+      pushed all three changes in one commit. Both guards in `tests/unit/test_stale_ids.py`
+      reported `XPASS(strict)` on the bump, exactly as designed, and the
+      `xfail(strict=True)` marker was deleted in the same commit that recorded the pointer.
+      They now assert plainly and stay as regression guards. The record of what was applied,
+      kept for the next reader:
+
+      The `database:`
+      half was prepared and dry-run: it is two deletions, verified to apply cleanly against
       the currently pinned commit `d11219d`, and re-verified 2026-09-02 against the
       installed dbt 1.11.11 (`dbt/parser/sources.py:154,158` —
       `database=(source.database or default_database)`), so an absent `database` inherits
@@ -962,12 +969,12 @@ Each with options and a recommendation. None is taken by this document.
 
 - [ ] Plan reviewed by Sagar
 - [ ] Decisions 1–8 taken; D-006 closed; D2 successor entry added to `notes/decisions.md`
-- [~] M0 — hygiene (tests first; tfstate out of git; `main.tf` rewrite; submodule fix
-      upstream + pointer bump; Spark 4.0.1 parity test). All done **except the submodule
-      fix**, which needs a push to `ny_taxi_analytics` that only the owner makes. The two
-      guards in `tests/unit/test_stale_ids.py` stay `xfail(strict=True)` until the pointer
-      bumps; the moment it does they fail hard, and that failure is the instruction to
-      delete the marker.
+- [x] M0 — hygiene (tests first; tfstate out of git; `main.tf` rewrite; submodule fix
+      upstream + pointer bump; Spark 4.0.1 parity test). **Complete 2026-09-02.** The
+      submodule fix landed last, as upstream `305868f`; the pointer moved off `d11219d`,
+      both `xfail(strict=True)` guards reported `XPASS(strict)` on the bump, and the marker
+      was deleted. Gate: 292 passed, 1 skipped, 0 xfailed, the 9 integration failures
+      unchanged — they need M1's provisioned project.
 - [ ] M1 — provision via Terraform; budget alerts first
 - [ ] M2 — DAGs proven from the laptop; archive fingerprint recorded
 - [ ] M3 — `dbt_prod` rebuilt; `COUNT(*) = 128,781,646` checked; 0 integration failures
