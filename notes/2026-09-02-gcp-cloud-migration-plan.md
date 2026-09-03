@@ -943,20 +943,71 @@ Actual upload was 4.10 GiB against the ~5 GB estimate. Per-file sizes are record
 
 ### M3 — dbt marts in the cloud, and the reproducibility check that matters
 
-- [ ] `dbt_build_marts` from the local compose stack (target `prod`), or the CLI form in
-      CLAUDE.md. First `dbt build --target dev` to `dbt_dev` if a cheap dry run is wanted.
-- [ ] **The check:** `SELECT COUNT(*) FROM dbt_prod.fact_trips` must return
-      **128,781,646** — the local backup's exact count, verified against the dashboard on
-      2026-07-10. Equal → the cloud rebuild reproduces the local modeling input and the
-      backup is a *copy*, not a *fork*. Unequal → §6.1's archive dependency has bitten,
-      and the difference is the first thing to report.
-- [ ] Measure `fact_trips` logical bytes and record it against the 3.2 assumption.
-- [ ] Reconnect Looker Studio to `dbt_prod`.
+- [x] `dbt_build_marts` from the local compose stack (target `prod`), and the CLI form.
+      Built to `dbt_dev` first as the dry run.
+- [x] **The check, as revised:** the plan's original target of **128,781,646** turned out
+      to be unreproducible — see the finding below — so the check became "does the cloud
+      rebuild reproduce *itself*", not "does it match the restore". **Complete
+      2026-09-03.** Two consecutive `dbt_dev` builds, a `dbt_prod` CLI build, and a
+      `dbt_build_marts` DAG run (paused DAG, unpaused for the trigger, re-paused after)
+      all produced **`fact_trips` = 128,408,323 rows**, with an identical content
+      checksum (`BIT_XOR(FARM_FINGERPRINT(TO_JSON_STRING(t)))` over every row) across all
+      four builds. The cloud rebuild reproduces itself; the restore does not, because it
+      was never reproducible to begin with (next point).
+- [x] **Finding — the restore's exact count was never reproducible, and it is now fixed.**
+      `stg_yellow_taxi_data` and `stg_green_taxi_data` deduplicate on
+      `(vendorid, pickup_datetime)` with `row_number()` and **no `ORDER BY`**. Measured:
+      74,402,554 tied groups in the yellow source alone over 2015-01–2016-12, of which
+      74,359,200 disagree on the pickup/dropoff zone pair. `fact_trips` inner-joins zones
+      on both ends, so an arbitrary tie winner changed the row count on every build — the
+      128,781,646 figure was one arbitrary draw, not a fixed target. Fixed upstream in the
+      submodule (`sinhasagar507/ny_taxi_analytics@3f927a3`, pointer bumped here): both
+      `row_number()` calls now order by every emitted column, so ties resolve only between
+      rows identical in the output. `trip_type` and `congestion_surcharge` are excluded
+      from the green tiebreak — the external table declares both `INT64` but the
+      underlying 2015–2016 Parquet stores `DOUBLE`, so ordering by either throws a type
+      error, and neither column is selected downstream. New reproducible count:
+      **128,408,323** (373,323 below the old arbitrary draw — expected, since the fix
+      changes which tied row wins, not how many trips exist).
+- [x] **Known non-issue, documented not fixed:** `dim_monthly_zones_revenue.avg_montly_passenger_count`
+      differs between builds at the ~1e-14 relative level. `passenger_count` is cast to
+      `INTEGER` upstream, so `AVG` returns `FLOAT64`, and BigQuery's distributed summation
+      order is not guaranteed identical across executions — an engine property, not a data
+      bug. Verified every other column in that model (all money sums, trip counts,
+      `avg_montly_trip_distance`, which averages a `NUMERIC` column) matches exactly
+      across all 11,643 groups, dev vs. prod, 0 mismatches.
+- [x] **Incident, self-inflicted and repaired:** while checking task logs, an
+      `airflow tasks test dbt_build_marts dbt_build` command was run by mistake — that
+      subcommand *executes* the task rather than displaying its log, so it ran a second,
+      concurrent `dbt build --target prod` against the same tables as the real,
+      just-triggered DAG run. Result: `dbt_prod.fact_trips` briefly held 513,633,292 rows
+      (~4× duplication, additive, not merged/corrupted — confirmed every `tripid` present
+      an exact multiple of the correct row, 5 tripids at 8× from a residual tie-break race
+      at the overlap). Fixed by confirming no dbt process remained anywhere (host,
+      webserver container, worker container — checked via `/proc` since the containers
+      have no `ps`/`kill` binaries) and running exactly one more `dbt build --target prod`
+      alone, which returned every `dbt_prod` table to the correct, checksum-verified
+      counts. `gs://primary-data-dtc-506916/dbt_prod_restore/` was never touched by any of
+      this — reconfirmed at 204 objects, 7.053 GiB, unchanged. All 9 DAGs, including
+      `dbt_build_marts`, are re-paused, matching the M2 baseline.
+- [x] Measure `fact_trips` logical bytes and record it against the 3.2 assumption.
+      **Measured: 58,576,839,052 bytes = 54.56 GiB** (the checksum-verified build).
+      3.2 assumed 15–30 GiB — **refuted**, the real figure is ~1.8× the top of that range.
+      Storage at one copy: (54.56 − 10) × $0.023 ≈ **$1.02/month**. `dbt_dev` was dropped
+      after the reproducibility check completed, so only the one `dbt_prod` copy remains
+      (plus the untouched 7.053 GiB GCS restore).
+- [ ] Reconnect Looker Studio to `dbt_prod`. **Owner-only** — hand off, not a blocker.
 - [ ] Push the branch so CI's `dbt build --target ci` runs once with `GCP_SA_KEY` set
-      (the owner pushes — audit item 2).
-- **Gate:** `pytest tests/` — 0 integration failures. First time in the project's history.
-- **Rollback:** drop `dbt_prod` tables; rebuild is one DAG run.
-- **Cost:** under $1/month storage; queries free.
+      (the owner pushes — audit item 2), and push the submodule's `3f927a3` to
+      `origin/main` so the fix is authoritative remotely. **Owner-only** — hand off, not a
+      blocker.
+- **Gate:** `pytest tests/` — **0 failed, 301 passed, 1 skipped**, re-measured after all of
+      the above. This was already true before M3 (M2 met it); M3 proves no regression, not
+      new progress.
+- **Rollback:** drop `dbt_prod` tables; reload from `dbt_prod_restore/`, or rebuild is one
+      DAG run.
+- **Cost:** ~$1.02/month storage on the one surviving copy; queries free (all scans this
+      milestone stayed inside the 1 TiB free tier).
 
 ### M4 — Spark on Dataproc Serverless: smoke, then §5c
 
@@ -969,7 +1020,9 @@ Actual upload was 4.10 GiB against the ~5 GB estimate. Per-file sizes are record
       is not exercised by this run; the point is that the coordinate resolves). Compare to
       the 2.4 baseline exactly as in the local 4.0.1 parity test.
 - [ ] `00_prep_spark.py` reading `dbt_prod.fact_trips` through the connector instead of
-      the local backup; assert the 128,781,646 count and the p99 caps in `prep_stats.json`
+      the local backup; assert the count **as rebuilt in M3 — 128,408,323, not the
+      128,781,646 quoted earlier in this plan** (M3 found and fixed a non-deterministic
+      tiebreak; see that section) — and the p99 caps in `prep_stats.json`
       (Yellow $52 / 18.7 mi, Green $45 / 14.15 mi) match the local run.
 - [ ] §5c MLlib arm on `sample_full` — after §5's encoder work decides *which* MLlib arm.
 - [ ] `gcloud dataproc batches list` — nothing running; `gcloud compute instances list` —
@@ -1337,8 +1390,17 @@ Each with options and a recommendation. None is taken by this document.
       50 objects, 4.10 GiB, 312,790,342 trip rows across yellow and green. Gate met at
       **0 failed, 301 passed, 1 skipped** — all 7 integration failures flipped. Per-file
       sizes in `notes/gcp-reference.md`. `dbt_prod_restore/` untouched at 204 objects.
-- [ ] M3 — `dbt_prod` rebuilt; `COUNT(*) = 128,781,646` checked. Its "0 integration
-      failures" half is **already met** by M2.
+- [x] M3 — `dbt_prod` rebuilt from the cloud, four ways, all in agreement. **Complete
+      2026-09-03.** The planned check against 128,781,646 turned out to target an
+      unreproducible number — a missing `ORDER BY` in two staging models let BigQuery pick
+      an arbitrary tiebreak winner on every build. Fixed upstream (submodule `3f927a3`);
+      new reproducible count is **128,408,323**, checksum-verified identical across two
+      `dbt_dev` builds, a `dbt_prod` CLI build, and the `dbt_build_marts` DAG. A
+      self-inflicted accidental concurrent build briefly 4×-duplicated `dbt_prod.fact_trips`;
+      caught, diagnosed, and repaired with one clean rebuild — full detail in the M3
+      section. `fact_trips` measured at 54.56 GiB, refuting the 3.2 assumption of 15-30
+      GiB. Gate: **0 failed, 301 passed, 1 skipped** — unchanged from M2, so this proves no
+      regression, not new progress. `dbt_dev` dropped and all 9 DAGs re-paused after.
 - [ ] M4 — Serverless smoke inside fold noise; prep from BigQuery matches `prep_stats.json`
 - [ ] §5.3 OOF encoder (TDD) and §5.4 acceptance run — result recorded in the modeling plan §5b
 - [ ] §5c run scoped per decision 3
