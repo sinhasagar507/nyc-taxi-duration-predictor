@@ -836,6 +836,35 @@ This settles the question DAG 1 exists to answer. The keyfile authenticates agai
 `BigQueryInsertJobOperator` may create an external table at location `US`. DAGs 2–4 will
 not fail on credentials. Airflow is **2.10.3**; the image built clean, exit 0, and disk
 held at 50 GiB free.
+
+**DAG 2 — `nyc_climate_data_ingestion_dag`. PASSED.** Run `m2_climate_20260903T035704`,
+success, 03:57:07 → 03:57:15 UTC, all five tasks green: download, convert, upload, cleanup,
+trigger. `create_external_table_climate_data` followed and succeeded, 03:57:15 → 03:57:18.
+
+| Measured | Value |
+| --- | --- |
+| Object | `nyc_climate_data/climate_data.parquet`, **1,037,285 bytes** |
+| BigQuery | `nyc_climate_data.climate_external_table`, `EXTERNAL`, **19,260 rows** |
+
+This proves the second blocker fix end to end. The object carries the project's filename,
+`climate_data.parquet`, which is the name `tests/integration/test_gcs.py:49` looks for. The
+old `weather_cache_sm.parquet` would have failed the test after a perfect ingest.
+
+**DAG 3 — `nyc_green_taxi_data_ingestion_dag`. PASSED, 24 of 24.** Unpausing was enough;
+`catchup=True` created the runs and `max_active_runs=1` ran them one at a time, exactly as
+designed. 03:58:07 → 04:20:13 UTC, about 22 minutes for the whole backfill.
+
+| Measured | Value |
+| --- | --- |
+| Ingest runs | **24 success, 0 failed** (2015-01 … 2016-12) |
+| External-table runs | **24 success** — one per month, each triggered by its ingest run |
+| Objects | **24 parquet files, 540,892,554 bytes** total |
+| Per file | 22.7 MB … 26.7 MB; smallest `2015-01` at 22,732,044 B |
+| BigQuery | `nyc_taxi_data.green_taxi_external_table`, `EXTERNAL`, **35,619,306 rows** |
+
+One timing note worth keeping. Month `2015-05` took 6 minutes while its neighbours took 20
+to 30 seconds each. Nothing failed and no retry fired, so this was uplink variance, not a
+defect. Plan for a long tail on yellow rather than a flat per-file rate.
 - [ ] Record per-file byte sizes and row counts from the GCS listing into
       `notes/gcp-reference.md` — this is the archive fingerprint §6.1 depends on.
 - **Gate:** `test_gcs.py` 24 + 24 parquet files, zone CSV, climate parquet;
