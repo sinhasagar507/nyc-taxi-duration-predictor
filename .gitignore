@@ -52,7 +52,6 @@ test/
 google/5.6.0/darwin_arm64/
 secrets/
 .google/credentials/
-02_workflow_orchestration/airflow/logs/scheduler/latest
 test/green_data_rectify.ipynb
 
 # Large files that exceed GitHub's limit
