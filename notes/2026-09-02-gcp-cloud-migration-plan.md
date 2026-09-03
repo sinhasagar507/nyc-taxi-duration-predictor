@@ -787,7 +787,7 @@ reads `/.google/credentials/gcp-credentials.json`; `nyc_climate_gcs_dag.py:31` s
 
 - [x] Credential mount and `GCP_PROJECT_ID` / `GCP_GCS_BUCKET` confirmed and fixed — see
       the readiness audit above. The two env vars already held the M1 values.
-- [ ] `docker compose -f airflow/docker-compose.yaml up --build` locally. Trigger, in
+- [x] `docker compose -f airflow/docker-compose.yaml up --build` locally. Trigger, in
       order and one at a time: `nyc_taxi_zone_ingestion_dag`, `nyc_climate_data_ingestion_dag`,
       `nyc_green_taxi_data_ingestion_dag`, `nyc_taxi_data_ingestion_dag` (yellow, the big
       one — 24 × ~170 MB through the laptop's uplink). Each triggers its external-table DAG.
@@ -865,12 +865,81 @@ designed. 03:58:07 → 04:20:13 UTC, about 22 minutes for the whole backfill.
 One timing note worth keeping. Month `2015-05` took 6 minutes while its neighbours took 20
 to 30 seconds each. Nothing failed and no retry fired, so this was uplink variance, not a
 defect. Plan for a long tail on yellow rather than a flat per-file rate.
-- [ ] Record per-file byte sizes and row counts from the GCS listing into
+
+**DAG 4 — `nyc_taxi_data_ingestion_dag` (yellow). PASSED, 24 of 24.** 04:21:17 → 05:15:35
+UTC, about 54 minutes for 3.86 GB. All 24 ingest runs and all 24 external-table runs
+succeeded.
+
+*The stray 2015-01 run recovered by itself, and that is worth stating precisely.* It was
+left `failed` with two tasks forced to `failed`. On unpause Airflow applied `retries: 1`,
+re-ran `cleanup_local_file_task` and `trigger_external_table`, and both passed, so the run
+finished `success` with its external table triggered. `local_to_gcs_task` did **not**
+re-run — the object's timestamp stayed at 03:51:53 — so the 175 MB was never re-uploaded.
+The earlier note in this section predicted catchup would skip 2015-01; the file was indeed
+not re-sent, but the mechanism was task retry, not a skipped run.
+
+*One real failure, retried and recovered.* Month **2016-08** failed its first
+`local_to_gcs_task` attempt after 222 seconds:
+
+```
+requests.exceptions.ReadTimeout: HTTPSConnectionPool(host='storage.googleapis.com',
+port=443): Read timed out. (read timeout=60)
+```
+
+That is a resumable-upload chunk timing out, not an auth or data fault. `retries: 1` re-ran
+the task at 05:01:45 and it succeeded. Green showed the same shape earlier, where 2015-05
+took 6 minutes against 20–30 seconds for its neighbours. **Conclusion: the 60-second read
+timeout on a chunked upload is the one recurring failure mode of this ingest over a home
+uplink, and the existing single retry absorbs it.** On the M5 VM the upload is
+Google-internal, so this should disappear; if a future backfill runs from a laptop again,
+raise `retries` before raising anything else.
+
+**M2 GATE — MET. 0 integration failures.**
+
+| Suite | Result |
+| --- | --- |
+| M2 opening baseline | 7 failed, 294 passed, 1 skipped |
+| M2 close | **0 failed, 301 passed, 1 skipped**, 302 collected, 22.68 s |
+
+All seven flipped, and none of them was `test_dbt`:
+
+- `test_gcs.py::TestYellowTaxiData::test_yellow_taxi_has_24_parquet_files`
+- `test_gcs.py::TestGreenTaxiData::test_green_taxi_has_24_parquet_files`
+- `test_gcs.py::TestReferenceData::test_taxi_zone_csv_exists`
+- `test_gcs.py::TestReferenceData::test_climate_parquet_exists`
+- `test_bigquery.py::TestExternalTablesQueryable::test_yellow_external_table_has_rows`
+- `test_bigquery.py::TestExternalTablesQueryable::test_green_external_table_has_rows`
+- `test_bigquery.py::TestExternalTablesQueryable::test_climate_external_table_has_rows`
+
+Nothing regressed; the one skip is the same pre-existing skip as in the baseline. This
+**confirms the corrected prediction and refutes the gate text as written**, which expected
+one surviving failure named `test_dbt`. `test_dbt` passed before M2 and passes now. M3's
+gate is therefore already met before M3 starts.
+
+**Closing state, measured 2026-09-03 05:16 UTC.**
+
+| Measured | Value |
+| --- | --- |
+| Ingest objects | **50 objects, 4,402,064,926 bytes** (4.10 GiB) across the four prefixes |
+| Yellow | 24 files, 3,860,122,756 B, **277,171,036 rows** |
+| Green | 24 files, 540,892,554 B, **35,619,306 rows** |
+| Zone | 12,331 B, **265 rows** |
+| Climate | 1,037,285 B, **19,260 rows** |
+| `dbt_prod_restore/` | **204 objects, 7.053 GiB — unchanged throughout M2** |
+| All 9 DAGs | paused again |
+| Disk | 48 GiB free, unchanged |
+
+Actual upload was 4.10 GiB against the ~5 GB estimate. Per-file sizes are recorded in
+`notes/gcp-reference.md` under *Archive fingerprint*, which is what §6.1 depends on.
+
+**M2 DONE — 2026-09-03.**
+- [x] Record per-file byte sizes and row counts from the GCS listing into
       `notes/gcp-reference.md` — this is the archive fingerprint §6.1 depends on.
-- **Gate:** `test_gcs.py` 24 + 24 parquet files, zone CSV, climate parquet;
-  `test_bigquery.py::TestExternalTablesQueryable` rows > 0. Failures: → 1 (`test_dbt`).
+- **Gate: MET.** `test_gcs.py` 24 + 24 parquet files, zone CSV, climate parquet;
+  `test_bigquery.py::TestExternalTablesQueryable` rows > 0. Failures: → **0**, not the 1
+  (`test_dbt`) this line predicted. See the gate table above.
 - **Rollback:** delete the prefixes; external tables are `CREATE OR REPLACE`.
-- **Cost:** ~5 GB in GCS, on the free allowance or cents.
+- **Cost:** 4.10 GiB in GCS, measured, against the ~5 GB estimate.
 
 ### M3 — dbt marts in the cloud, and the reproducibility check that matters
 
@@ -1261,9 +1330,15 @@ Each with options and a recommendation. None is taken by this document.
       both `xfail(strict=True)` guards reported `XPASS(strict)` on the bump, and the marker
       was deleted. Gate: 292 passed, 1 skipped, 0 xfailed, the 9 integration failures
       unchanged — they need M1's provisioned project.
-- [ ] M1 — provision via Terraform; budget alerts first
-- [ ] M2 — DAGs proven from the laptop; archive fingerprint recorded
-- [ ] M3 — `dbt_prod` rebuilt; `COUNT(*) = 128,781,646` checked; 0 integration failures
+- [x] M1 — provision via Terraform; budget alerts first. **Complete 2026-09-02** — the
+      M1 section already recorded this; the box was left unticked.
+- [x] M2 — DAGs proven from the laptop; archive fingerprint recorded. **Complete
+      2026-09-03.** All 4 ingest and all 4 external-table DAGs ran green from the laptop:
+      50 objects, 4.10 GiB, 312,790,342 trip rows across yellow and green. Gate met at
+      **0 failed, 301 passed, 1 skipped** — all 7 integration failures flipped. Per-file
+      sizes in `notes/gcp-reference.md`. `dbt_prod_restore/` untouched at 204 objects.
+- [ ] M3 — `dbt_prod` rebuilt; `COUNT(*) = 128,781,646` checked. Its "0 integration
+      failures" half is **already met** by M2.
 - [ ] M4 — Serverless smoke inside fold noise; prep from BigQuery matches `prep_stats.json`
 - [ ] §5.3 OOF encoder (TDD) and §5.4 acceptance run — result recorded in the modeling plan §5b
 - [ ] §5c run scoped per decision 3
