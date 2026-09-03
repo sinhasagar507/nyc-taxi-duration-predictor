@@ -701,9 +701,58 @@ M1 has no business creating. They belong to M4 and M5.
 
 ### M2 — Prove the ingest and external-table DAGs from the laptop
 
-- [ ] Confirm how `airflow/docker-compose.yaml` passes `GOOGLE_APPLICATION_CREDENTIALS`
-      and the keyfile mount into the containers (unread in the research). Set
-      `GCP_PROJECT_ID`, `GCP_GCS_BUCKET` in the compose env to the M1 values.
+**Readiness audit, 2026-09-02, before any DAG ran.** Two defects, one fixed here.
+
+**Defect 1 — the Airflow keyfile named a dead project. FIXED.** `docker-compose.yaml`
+mounted `~/.google/credentials/` from the host home and pointed
+`GOOGLE_APPLICATION_CREDENTIALS` at `google_credentials.json` inside it. That host file
+names **`dtc-de-project-492321`**, the exhausted trial, not the live
+`dtc-de-project-506916`. Every DAG would have failed on auth before downloading anything.
+The mount now reads the repo's gitignored `../secrets` and the stable filename
+`gcp-credentials.json` — the same decoupling `tests/conftest.py` documents, so Airflow,
+pytest and dbt share one key. Verified with `docker compose config`: the source resolves to
+`<repo>/secrets` and `GOOGLE_APPLICATION_CREDENTIALS` reads
+`/.google/credentials/gcp-credentials.json`. A directory mount was chosen over a single-file
+mount because Docker silently creates a *directory* at a missing single-file source, which
+would break a fresh clone.
+
+**Defect 2 — the climate filename disagrees with its test. OPEN, needs a decision.**
+
+| Side | Value |
+| --- | --- |
+| `nyc_climate_gcs_dag.py:24,134` uploads | `nyc_climate_data/weather_cache_sm.parquet` |
+| `test_gcs.py:49` looks for | `nyc_climate_data/climate_data.parquet` |
+
+So `test_climate_parquet_exists` fails **even after a perfect ingest**. The external table
+reads `nyc_climate_data/*.parquet`, so dbt and M3 are unaffected — only the test is. Either
+the DAG constant or the test changes. The owner decides which.
+
+**This corrects the M2 gate below.** It predicts failures drop to 1 and names `test_dbt` as
+the survivor. The *count* is right; the *test* is wrong. `test_dbt` already passes today.
+The real survivor is `test_climate_parquet_exists`, unless defect 2 is fixed first, in which
+case M2 reaches **0 integration failures** — and M3's gate is met before M3 starts.
+
+**Verified clean — everything else M2 needs.**
+
+| Check | Result |
+| --- | --- |
+| Hardcoded project/bucket IDs in the 8 DAGs | none; all read `os.environ` |
+| GCS prefixes: ingest → external table → test | match for yellow, green and zone |
+| Ingest window in compose | `2015-01-01`…`2016-12-31` = 24 months, matching the 24-file tests |
+| TLC yellow, TLC green, zone CSV, climate gist | all HTTP 200 |
+| `yellow_tripdata_2015-01.parquet` | 175,325,767 bytes, matching the plan's ~170 MB |
+| Docker | running, 27.4.0 |
+| M1's UBLA hardening vs the DAGs | safe — no `make_public`, `predefined_acl` or `.acl` anywhere |
+
+**Cosmetic, not a blocker.** `nyc_taxi_gcs_{yellow,green}_dag.py:17` set
+`TAXI_BIGQUERY_DATASET_ID = os.environ.get("BIGQUERY_DATASET", "nyc_tlc_trips")`. That
+dataset does not exist, but the constant is assigned and never used — the ingest DAGs only
+upload to GCS, and the external-table DAGs carry their own correct hardcoded dataset names.
+Dead code worth deleting.
+
+
+- [x] Credential mount and `GCP_PROJECT_ID` / `GCP_GCS_BUCKET` confirmed and fixed — see
+      the readiness audit above. The two env vars already held the M1 values.
 - [ ] `docker compose -f airflow/docker-compose.yaml up --build` locally. Trigger, in
       order and one at a time: `nyc_taxi_zone_ingestion_dag`, `nyc_climate_data_ingestion_dag`,
       `nyc_green_taxi_data_ingestion_dag`, `nyc_taxi_data_ingestion_dag` (yellow, the big

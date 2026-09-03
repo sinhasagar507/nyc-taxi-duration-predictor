@@ -64,8 +64,11 @@ x-airflow-common:
     AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
     AIRFLOW__API__AUTH_BACKEND: 'airflow.api.auth.backend.basic_auth'
     _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:-}
-    GOOGLE_APPLICATION_CREDENTIALS: /.google/credentials/google_credentials.json
-    AIRFLOW_CONN_GOOGLE_CLOUD_DEFAULT: 'google-cloud-platform://?extra__google_cloud_platform__key_path=/.google/credentials/google_credentials.json'
+    # Points at the repo's stable keyfile, mounted below from ../secrets. The old
+    # value read ~/.google/credentials/google_credentials.json on the host, which
+    # names the dead project dtc-de-project-492321 — every DAG failed on auth.
+    GOOGLE_APPLICATION_CREDENTIALS: /.google/credentials/gcp-credentials.json
+    AIRFLOW_CONN_GOOGLE_CLOUD_DEFAULT: 'google-cloud-platform://?extra__google_cloud_platform__key_path=/.google/credentials/gcp-credentials.json'
     GCP_PROJECT_ID: 'dtc-de-project-506916'
     GCP_GCS_BUCKET: 'primary-data-dtc-506916'
     # Ingest backfill window (single source of truth; DAGs read via os.environ)
@@ -83,7 +86,12 @@ x-airflow-common:
     - ./logs:/opt/airflow/logs
     - ./plugins:/opt/airflow/plugins
     - ../dbt:/opt/airflow/dbt
-    - ~/.google/credentials/:/.google/credentials:ro
+    # The repo's gitignored secrets/ dir, not the host home. One stable filename,
+    # so a GCP account swap is a one-file drop for Airflow, pytest and dbt alike
+    # (the decoupling tests/conftest.py documents). Mounted as a directory, not a
+    # single file: a single-file bind mount silently creates a directory on a
+    # fresh clone where the keyfile is absent.
+    - ../secrets:/.google/credentials:ro
 
   user: "${AIRFLOW_UID:-50000}:0"
   depends_on:
