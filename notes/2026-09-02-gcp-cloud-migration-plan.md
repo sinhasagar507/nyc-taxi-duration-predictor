@@ -758,6 +758,32 @@ dataset does not exist, but the constant is assigned and never used — the inge
 upload to GCS, and the external-table DAGs carry their own correct hardcoded dataset names.
 Dead code worth deleting.
 
+**M2 opening measurement, 2026-09-02, re-measured before the first DAG ran (D-009).**
+Nothing here is carried over from M1; every row was read from the cloud or the laptop
+again. All of it reproduced the M1 closing numbers exactly.
+
+| Measured | Value |
+| --- | --- |
+| `pytest tests/` | **7 failed, 294 passed, 1 skipped**, 302 collected, 21.94 s |
+| Failing tests | 4 × `test_gcs.py` (yellow 24, green 24, zone CSV, climate parquet), 3 × `test_bigquery.py::TestExternalTablesQueryable` (yellow, green, climate) |
+| Keyfile `secrets/gcp-credentials.json` | project `dtc-de-project-506916`, SA `dtc-de-course@…` — the live project |
+| Datasets, location `US` | `nyc_taxi_data` 0 tables, `nyc_climate_data` 0, `dbt_prod` 4, `dbt_dev` 0, `dbt_ci` 0 |
+| `dbt_prod` tables | `fact_trips`, `dim_zones`, `dim_monthly_zones_revenue`, `taxi_zone_lookup` |
+| `gs://primary-data-dtc-506916` total | **204 objects, 7.053 GiB** — all of it under `dbt_prod_restore/fact_trips/` |
+| The four ingest prefixes | **absent** — zero objects, which is exactly why the 7 tests fail |
+| Disk free | 48 GiB available (89 % capacity), plus 7.77 GB reclaimable in Docker images |
+| Docker | 11 images, 10.49 GB; build cache 1.69 GB |
+
+Two consequences worth stating. The restore prefix is untouched and stays untouched — M2
+writes only to `nyc_taxi_data/{yellow,green}_taxi_data/`, `nyc_taxi_data/taxi_lookup_data/`
+and `nyc_climate_data/`, none of which overlap it. And the 48 GiB of headroom clears the
+~10 GiB floor set for the image build, so the build is not a disk risk.
+
+**Both fixes above re-verified in the tree, not from the commit messages.**
+`airflow/docker-compose.yaml:94` mounts `../secrets:/.google/credentials:ro` and line 70
+reads `/.google/credentials/gcp-credentials.json`; `nyc_climate_gcs_dag.py:31` sets
+`CLIMATE_DATA_TARGET_PARQUET = "climate_data.parquet"`. Neither regressed.
+
 
 - [x] Credential mount and `GCP_PROJECT_ID` / `GCP_GCS_BUCKET` confirmed and fixed — see
       the readiness audit above. The two env vars already held the M1 values.
