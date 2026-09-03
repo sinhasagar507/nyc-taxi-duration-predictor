@@ -791,6 +791,51 @@ reads `/.google/credentials/gcp-credentials.json`; `nyc_climate_gcs_dag.py:31` s
       order and one at a time: `nyc_taxi_zone_ingestion_dag`, `nyc_climate_data_ingestion_dag`,
       `nyc_green_taxi_data_ingestion_dag`, `nyc_taxi_data_ingestion_dag` (yellow, the big
       one — 24 × ~170 MB through the laptop's uplink). Each triggers its external-table DAG.
+
+**The DAGs do not land paused. The plan's premise was wrong (measured 2026-09-03).**
+This bullet list said `DAGS_ARE_PAUSED_AT_CREATION=true` would hold every DAG until it was
+triggered by hand. It does not. That setting applies **only when Airflow first creates a
+DAG record**. The compose stack's `postgres` volume survives `down` and has carried this
+project's metadata since 2025, so every DAG already had a row — and with it the pause state
+the owner last left it in. Six of the nine came up **unpaused**: the four external-table
+DAGs, `nyc_climate_data_ingestion_dag`, and `nyc_taxi_data_ingestion_dag`.
+
+That last one is yellow, the largest DAG, with `catchup=True` and a monthly schedule from
+2015-01. The scheduler queued its first backfill run 65 seconds before the pause landed.
+The run finished `download_dataset_task` and `local_to_gcs_task` before it could be caught.
+
+*The damage, measured, not assumed.* One object,
+`nyc_taxi_data/yellow_taxi_data/yellow_tripdata_2015-01.parquet`, **175,325,767 bytes** —
+byte-for-byte the size this plan already recorded for that file, so the upload is correct
+rather than truncated. `dbt_prod_restore/` re-counted at **204 objects, 7.053 GiB**,
+unchanged. No stop condition fired.
+
+*The decision (owner, 2026-09-03):* keep the file and resume the stated order; leave the
+`postgres` volume alone and rely on explicit pausing instead. The stray run was marked
+`failed` so it stops holding `cleanup_local_file_task`, and because a failed run still
+counts as run, catchup will not re-issue 2015-01 when yellow's turn comes.
+
+**The lesson, for M5.** A persisted metadata volume outranks
+`DAGS_ARE_PAUSED_AT_CREATION`. On the GCE VM the first `up` will have an empty volume, so
+the flag will work there exactly as written — but never trust it on a stack that has run
+before. Pause explicitly, then verify with `airflow dags list`, before triggering anything.
+
+**DAG 1 — `nyc_taxi_zone_ingestion_dag`, the credential canary. PASSED.**
+
+| Measured | Value |
+| --- | --- |
+| Run | `m2_zone_20260903T035438`, **success**, 03:54:43 → 03:54:50 UTC |
+| Tasks | all four success: download, upload, cleanup, trigger |
+| Chained DAG | `create_external_table_taxi_zone` **success**, 03:54:50 → 03:54:53 |
+| Object | `nyc_taxi_data/taxi_lookup_data/taxi_zone_lookup.csv`, **12,331 bytes** |
+| BigQuery | `nyc_taxi_data.taxi_zone_external_table`, type `EXTERNAL`, **265 rows** |
+| Suite | **7 failed → 6 failed**, 295 passed; `test_taxi_zone_csv_exists` flipped to pass |
+
+This settles the question DAG 1 exists to answer. The keyfile authenticates against
+`dtc-de-project-506916`, the service account may write to the bucket under UBLA, and
+`BigQueryInsertJobOperator` may create an external table at location `US`. DAGs 2–4 will
+not fail on credentials. Airflow is **2.10.3**; the image built clean, exit 0, and disk
+held at 50 GiB free.
 - [ ] Record per-file byte sizes and row counts from the GCS listing into
       `notes/gcp-reference.md` — this is the archive fingerprint §6.1 depends on.
 - **Gate:** `test_gcs.py` 24 + 24 parquet files, zone CSV, climate parquet;
