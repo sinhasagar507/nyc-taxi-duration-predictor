@@ -631,19 +631,73 @@ Notes on the guard, all measured.
   pending is stale.
 
 
-- [ ] Follow `notes/gcp-setup-runbook.md` up to and including the keyfile at
-      `secrets/gcp-credentials.json`; add the **budget alerts** (3.3) as the first
-      action after billing is linked. Enable `bigquery`, `bigquerystorage`, `storage`,
-      plus `dataproc.googleapis.com` and `compute.googleapis.com` for M4/M5.
-- [ ] Resolve the dataset-location question (2.1) before creating anything.
-- [ ] `terraform init` (fresh state, new lineage), `terraform plan` — must show creates
-      only. If the project already holds a resource with one of these names, `terraform
-      import` it first (the standing rule). `terraform apply`.
-- **Gate:** `tests/integration/test_gcs.py::…bucket reachable` passes; dataset-exists tests
-  in `test_bigquery.py` pass; file-count and row-count tests still fail (nothing
-  ingested). Expected: 9 → 5 or 6 failures.
-- **Rollback:** `terraform destroy` — empty bucket and empty datasets, seconds to undo.
-- **Cost:** $0 (empty resources).
+- [x] Budget alerts in place before anything was created (see the block above).
+- [x] Dataset-location question resolved (2.1) — `US` is correct, nothing had to change.
+- [x] `terraform init` on fresh state, `import` of the two live resources, `plan`, `apply`.
+- [x] Gate run. **7 failures, not the predicted 5-6.** The measurement wins (D-009).
+
+**M1 DONE — 2026-09-02.** Verified against the cloud, not from the apply output.
+
+*What was applied.* `Apply complete! Resources: 4 added, 1 changed, 0 destroyed.`
+
+| Resource | Action | Verified after |
+| --- | --- | --- |
+| `nyc_taxi_data`, `nyc_climate_data`, `dbt_dev`, `dbt_ci` | created | all present, `location=US` |
+| `dbt_prod` | imported, **no-op** in the plan | present, `location=US` |
+| `primary-data-dtc-506916` | imported, updated in place | UBLA `True`, public access `enforced`, abort-incomplete-upload rule present |
+| bucket objects | untouched | **204 before, 204 after** |
+
+*How the plan was made safe.* Three things had to happen before `apply`.
+
+1. **The bucket location was decoupled from `var.region`.** New `var.gcs_bucket_location`,
+   default `"US"`, matches the immutable live location. Without it the post-import plan is a
+   REPLACE, which destroys 7.05 GiB. The price of staying on the multi-region is the loss of
+   the Always Free 5 GB-month allowance, which is us-central1-only — about $0.19/month.
+2. **The state was made genuinely fresh.** `main.tf` now declares
+   `backend "local" { path = "pipeline.tfstate" }`. The legacy `terraform.tfstate` held
+   serial 3 for a **third**, dead project — `dtc-de-course-457315` — and two resources this
+   config no longer declares (`demo_dataset`, `demo-bucket`). Migrating it would have made
+   `plan` propose destroys. `terraform init` was answered `no` at the migration prompt. The
+   three legacy `*.tfstate*` files are now deleted.
+3. **The plan was not creates-only, and the owner approved the difference.** It was
+   `4 to add, 1 to change, 0 to destroy`. The one change was the bucket: the config is
+   stricter than the hand-made 2025 bucket (UBLA off → on, access `inherited` → `enforced`,
+   lifecycle rule added). No destroy, no replace, no object deleted.
+
+*Gate — measured, `.venv/bin/pytest tests/`.* **7 failed, 294 passed, 1 skipped, 0 xfailed.**
+Baseline was 9 failures.
+
+- **Flipped to passing (2):** `test_nyc_taxi_data_dataset_exists`,
+  `test_nyc_climate_data_dataset_exists`. These were the only two failures M1 could fix.
+- **Still failing (7), all for the same reason — no data is ingested yet, which is M2:**
+  `test_yellow_external_table_has_rows`, `test_green_external_table_has_rows`,
+  `test_climate_external_table_has_rows`, `test_yellow_taxi_has_24_parquet_files`,
+  `test_green_taxi_has_24_parquet_files`, `test_taxi_zone_csv_exists`,
+  `test_climate_parquet_exists`.
+- **Why the 5-6 prediction was wrong.** It assumed three or four of the nine failures were
+  dataset-shaped. Only two are. The other seven need objects in GCS and external tables over
+  them, and both are built by the DAGs in M2, not by Terraform.
+- The 1 skip is `test_docker_runtime.py`, marked "runs inside the dev container only".
+  Normal on the host.
+- **The passed count rose by 9, not by 2. That is not a contradiction.** The suite grew:
+  295 tests were collected at the 9-failure baseline, 302 now. M0 added the other 7
+  (`tests/unit/test_stale_ids.py` and the credential-shape tests). So 9 = 2 flipped +
+  7 newly added and passing.
+
+*No edit was needed to `airflow/docker-compose.yaml`.* Branch (A) reuses the same project and
+bucket, and lines 69-70 already read `GCP_PROJECT_ID: 'dtc-de-project-506916'` and
+`GCP_GCS_BUCKET: 'primary-data-dtc-506916'`. Recorded as a negative result.
+
+*APIs, measured.* `bigquery`, `bigquerystorage`, `storage`, `storage-api` and
+`billingbudgets` are enabled. **`dataproc` and `compute` were deliberately left disabled.**
+Enabling `compute.googleapis.com` can auto-create a default VPC network, which is a resource
+M1 has no business creating. They belong to M4 and M5.
+
+- **Rollback:** `terraform destroy` would now also delete `dbt_prod` and the bucket, which
+  hold real data. Do **not** use a bare destroy. Target the four new datasets instead:
+  `terraform destroy -target='google_bigquery_dataset.pipeline["nyc_taxi_data"]'` and so on.
+- **Cost:** the four new datasets are empty and add $0. The pre-existing ~$1.20/month
+  continues. The bucket hardening changes no price.
 
 ### M2 — Prove the ingest and external-table DAGs from the laptop
 
