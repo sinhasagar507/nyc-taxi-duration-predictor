@@ -178,11 +178,22 @@ and `sample_full.parquet`), `ml/models/`.
 external-table layer the DAGs and dbt sources are built on, and the raw files must land in
 GCS anyway for Spark to read them without the BigQuery connector.
 
-**Check before Phase 1:** whether a BigQuery dataset in the US multi-region can define
-external tables over a `us-central1` bucket, or whether the datasets must be created in
-`us-central1` to match. `dbt/profiles.yml` sets no `location`. Not resolved in the research —
-UNVERIFIED; settle it from the BigQuery external-table docs before `terraform apply`, since
-a dataset's location cannot be changed afterwards.
+**Location question — RESOLVED 2026-09-02, VERIFIED against the BigQuery docs.** A `US`
+multi-region dataset **can** define and query an external table over a `us-central1` bucket,
+and pays no data-transfer charge for it. `docs.cloud.google.com/bigquery/docs/locations`:
+"If your BigQuery dataset is in the `US` multi-region, then the Cloud Storage bucket can be
+in the Iowa (`us-central1`) single region, or any dual-region that includes Iowa." The
+stricter sentence on the external-table page — "The Cloud Storage bucket must be in the same
+location as the dataset that contains the table you're creating" — is the general rule; the
+locations page carries the multi-region exception. Any **other** single region, `us-west1`
+for example, does incur transfer charges even though it sits inside the US multi-region.
+
+So the two Terraform variables already agree: `var.location = "US"` for the datasets,
+`var.region = "us-central1"` for a new bucket. `dbt/profiles.yml` stays on `location: US`.
+Nothing has to change together.
+
+**Correction to this section.** It said "`dbt/profiles.yml` sets no `location`". That is false
+as measured: all three targets (`dev`, `ci`, `prod`) hardcode `location: US`.
 
 ### 2.2 Warehouse — BigQuery, external tables + dbt marts
 
@@ -555,6 +566,70 @@ config that a test can pin, the failing test lands first.
 > still editing the submodule, and pushing there is the owner's.
 
 ### M1 — Provision, via Terraform, one bucket and five datasets
+
+**Opening measurement, 2026-09-02, keyfile `secrets/gcp-credentials.json`.** The statement in
+`CLAUDE.md` that "No GCP project is provisioned" is **false as measured**. The project is
+live, billing is enabled, and it already holds the migrated data.
+
+| Thing | Measured |
+| --- | --- |
+| Keyfile project | `dtc-de-project-506916`, SA `dtc-de-course@dtc-de-project-506916.iam.gserviceaccount.com` |
+| `gcloud` active account | `saggysimmba@gmail.com`; `core/project` = `dtc-de-project-506916` |
+| Billing account | `01E445-18A569-B9097E` "My Billing Account", OPEN, linked (`billingEnabled: true`) |
+| BigQuery datasets | **`dbt_prod` only**, location `US`. `nyc_taxi_data`, `nyc_climate_data`, `dbt_dev`, `dbt_ci` are absent |
+| Tables in `dbt_prod` | `fact_trips` 128,781,646 rows / 58.75 GB; `dim_monthly_zones_revenue` 11,572; `dim_zones` 265; `taxi_zone_lookup` 265 |
+| GCS bucket | `primary-data-dtc-506916`, location **`US` multi-region**, STANDARD |
+| Bucket contents | 204 objects, 7.05 GiB, all under `dbt_prod_restore/fact_trips/` |
+| `billingbudgets.googleapis.com` | **not enabled** — `gcloud billing budgets list` fails `SERVICE_DISABLED` |
+
+Three consequences the plan did not anticipate.
+
+1. **M1 is not a $0 step on this project.** 58.75 GB in BigQuery and 7.05 GiB in GCS already
+   accrue. Rough monthly list price: BigQuery active storage at $0.02/GB-month over the 10 GB
+   free allowance ≈ **$0.98/month**; GCS standard US multi-region ≈ **$0.19/month**. Call it
+   **~$1.20/month, already running**. The unit prices are UNVERIFIED (no primary page
+   captured); the storage figures are measured.
+2. **The live bucket's location contradicts `terraform/main.tf`.** The bucket is `US`
+   multi-region; `main.tf` sets the bucket `location = var.region` = `us-central1`. A bucket's
+   location is immutable, so importing this bucket and planning would show a **replace** —
+   which destroys 7.05 GiB. On branch (A) the bucket's location must be set to `US` before any
+   plan. This is separate from the dataset-location question in 2.1, which is resolved.
+3. **One of the five datasets exists, not none.** A branch-(A) run imports `dbt_prod` and
+   creates the other four.
+
+**Branch chosen: (A) reuse `dtc-de-project-506916`** (owner, 2026-09-02). The live bucket and
+`dbt_prod` are imported; the four missing datasets are created.
+
+**Budget guard — DONE, 2026-09-02, before any resource was created.**
+
+```
+gcloud services enable billingbudgets.googleapis.com --project=dtc-de-project-506916
+gcloud billing budgets create --billing-account=01E445-18A569-B9097E \
+  --display-name="nyc-taxi-guard-50usd" --budget-amount=50USD \
+  --threshold-rule=percent=1.0 --threshold-rule=percent=1.0,basis=forecasted-spend
+```
+
+The same command ran for 150 and 250. Verified by `gcloud billing budgets list`:
+
+| Budget | Amount | Thresholds |
+| --- | --- | --- |
+| `nyc-taxi-guard-50usd` | 50 USD | 100% actual, 100% forecast |
+| `nyc-taxi-guard-150usd` | 150 USD | 100% actual, 100% forecast |
+| `nyc-taxi-guard-250usd` | 250 USD | 100% actual, 100% forecast |
+
+Notes on the guard, all measured.
+
+- The budgets are **billing-account wide**, not project-scoped. `gcloud billing budgets`
+  takes `--billing-account`; the earlier UNVERIFIED note is now settled — it does target the
+  billing account, and `billingbudgets.googleapis.com` was indeed disabled and had to be
+  enabled first.
+- Notification goes to the default IAM recipients (billing admins) by email.
+  `disableDefaultIamRecipients` is unset.
+- **A second project shares this billing account:** `project-672ad9c7-bfa8-470e-9e1`, billing
+  enabled. Its spend counts against these budgets. The owner should check what it is.
+- **The project is `ACTIVE`.** The stored note that the account was disabled with an appeal
+  pending is stale.
+
 
 - [ ] Follow `notes/gcp-setup-runbook.md` up to and including the keyfile at
       `secrets/gcp-credentials.json`; add the **budget alerts** (3.3) as the first
