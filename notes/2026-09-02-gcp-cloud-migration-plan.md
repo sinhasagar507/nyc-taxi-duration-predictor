@@ -716,21 +716,29 @@ pytest and dbt share one key. Verified with `docker compose config`: the source 
 mount because Docker silently creates a *directory* at a missing single-file source, which
 would break a fresh clone.
 
-**Defect 2 — the climate filename disagrees with its test. OPEN, needs a decision.**
+**Defect 2 — the climate filename disagreed with its test. FIXED.** The DAG uploaded
+`nyc_climate_data/weather_cache_sm.parquet`; `test_gcs.py:49` looked for
+`nyc_climate_data/climate_data.parquet`. So `test_climate_parquet_exists` failed **even
+after a perfect ingest**.
 
-| Side | Value |
-| --- | --- |
-| `nyc_climate_gcs_dag.py:24,134` uploads | `nyc_climate_data/weather_cache_sm.parquet` |
-| `test_gcs.py:49` looks for | `nyc_climate_data/climate_data.parquet` |
+The DAG was the odd one out, not the test. Three places already named `climate_data.parquet`
+— `README.md:61`, `notes/gcp-reference.md:24` and `tests/integration/test_gcs.py:49` — and
+the project vocabulary is `nyc_climate_data`, `climate_external_table`, `stg_climate_data`.
+`weather_cache_sm` was an accident of the upstream gist filename. So
+`CLIMATE_DATA_TARGET_PARQUET` is now `climate_data.parquet`. That one constant drives the
+GCS object name, the local intermediate, the conversion output and the cleanup, so one line
+fixed all four. `CLIMATE_DATA_TARGET_CSV` keeps the gist's name on purpose: it is a local
+intermediate that never reaches GCS, so the name documents the source.
 
-So `test_climate_parquet_exists` fails **even after a perfect ingest**. The external table
-reads `nyc_climate_data/*.parquet`, so dbt and M3 are unaffected — only the test is. Either
-the DAG constant or the test changes. The owner decides which.
+*Left alone:* `airflow/tests/test_nyc_climate_dag.py` still says `weather_cache_sm.parquet`
+under a `raw/nyc_climate_data/` prefix. Both halves were already stale — the DAG dropped the
+`raw/` prefix long ago. CLAUDE.md classes those legacy TDD stubs as documentation, outside
+the standard `pytest tests/` run.
 
 **This corrects the M2 gate below.** It predicts failures drop to 1 and names `test_dbt` as
-the survivor. The *count* is right; the *test* is wrong. `test_dbt` already passes today.
-The real survivor is `test_climate_parquet_exists`, unless defect 2 is fixed first, in which
-case M2 reaches **0 integration failures** — and M3's gate is met before M3 starts.
+the survivor. Both halves are wrong. `test_dbt` already passes today, and with both defects
+fixed M2 should reach **0 integration failures** — meeting M3's gate before M3 starts.
+Treat 0 as a prediction, not a fact, and measure it (D-009).
 
 **Verified clean — everything else M2 needs.**
 

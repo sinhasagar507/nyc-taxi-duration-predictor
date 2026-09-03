@@ -20,8 +20,15 @@ CLIMATE_DATA_DIRECTORY = "nyc_climate" # folder path within the docker taxi data
 PATH_TO_LOCAL_HOME = os.environ.get("AIRFLOW_HOME", "/opt/airflow/") # the root path within the DOCKER environment
 CLIMATE_DATA_SOURCE_URL = "https://gist.githubusercontent.com/adrn/6455c48cb556d2f6f939c1e55b2308f8/raw/dedf6fd1989ab46baeab51058c788cca8aba4ca3/weather_cache_sm.csv"
 
+# The CSV keeps the upstream gist's own filename — it is a local intermediate and
+# never reaches GCS, so the name documents where the data came from.
 CLIMATE_DATA_TARGET_CSV = "weather_cache_sm.csv"
-CLIMATE_DATA_TARGET_PARQUET = "weather_cache_sm.parquet"
+# The parquet DOES reach GCS, so it carries the project's vocabulary, not the
+# upstream one. README.md, notes/gcp-reference.md and
+# tests/integration/test_gcs.py all name `climate_data.parquet`; only this DAG
+# said `weather_cache_sm.parquet`, so test_climate_parquet_exists failed even
+# after a successful ingest.
+CLIMATE_DATA_TARGET_PARQUET = "climate_data.parquet"
 
 CLIMATE_DATA_TARGET_CSV_DIRECTORY = os.path.join(PATH_TO_LOCAL_HOME, CLIMATE_DATA_DIRECTORY, CLIMATE_DATA_TARGET_CSV)
 CLIMATE_DATA_TARGET_PARQUET_DIRECTORY = os.path.join(PATH_TO_LOCAL_HOME, CLIMATE_DATA_DIRECTORY, CLIMATE_DATA_TARGET_PARQUET)
