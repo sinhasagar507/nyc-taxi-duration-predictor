@@ -8,8 +8,13 @@ name: dbt
 #     (the dbt_build_marts DAG, target=prod), so CI never writes to dbt_prod.
 #
 # Required repo secret:
-#   GCP_SA_KEY — full JSON of the service account key
-#                (secrets/dtc-de-project-492321-970e67a252d8.json)
+#   GCP_SA_KEY — full JSON of the service account key (secrets/gcp-credentials.json).
+#                Update this repo secret whenever the GCP account/key is rotated.
+#
+# Optional repo variable:
+#   GCP_PROJECT_ID — the BigQuery project dbt targets. Leave it unset and CI reads
+#                    the project out of GCP_SA_KEY itself. Set it only when the
+#                    service account lives in a different project from the data.
 
 on:
   push:
@@ -38,6 +43,7 @@ jobs:
       - name: Authenticate to BigQuery
         env:
           GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+          GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
         run: |
           if [ -z "$GCP_SA_KEY" ]; then
             echo "::error::GCP_SA_KEY secret is not set. Add the service-account JSON as a repo secret."
@@ -45,6 +51,24 @@ jobs:
           fi
           printf '%s' "$GCP_SA_KEY" > "$RUNNER_TEMP/gcp-key.json"
           echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/gcp-key.json" >> "$GITHUB_ENV"
+
+          # dbt/profiles.yml resolves the BigQuery project from GCP_PROJECT_ID.
+          # Without it CI silently targets the hardcoded fallback, which is the
+          # old exhausted project. Prefer the repo variable (set it only when the
+          # service account lives in a different project from the data); other-
+          # wise take the project the key itself belongs to, so an account swap
+          # is one secret rotation and nothing else. Never export an empty value:
+          # env_var() returns "" rather than its default when the name is set.
+          if [ -z "$GCP_PROJECT_ID" ]; then
+            GCP_PROJECT_ID=$(python -c \
+              "import json;print(json.load(open('$RUNNER_TEMP/gcp-key.json'))['project_id'])")
+          fi
+          if [ -z "$GCP_PROJECT_ID" ]; then
+            echo "::error::Could not resolve GCP_PROJECT_ID from the vars.GCP_PROJECT_ID repo variable or the key JSON."
+            exit 1
+          fi
+          echo "GCP_PROJECT_ID=$GCP_PROJECT_ID" >> "$GITHUB_ENV"
+          echo "dbt will target BigQuery project: $GCP_PROJECT_ID"
 
       - name: dbt deps
         run: dbt deps --project-dir dbt/ny_taxi_analytics

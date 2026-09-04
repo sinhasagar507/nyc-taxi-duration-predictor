@@ -19,8 +19,10 @@ Usage:
     result = df.groupBy("pickup_zone").count()
     result.show()
 """
-from pyspark.sql import SparkSession
+import os
 import logging
+
+from pyspark.sql import SparkSession
 from google.cloud import bigquery
 
 # Set up logging
@@ -221,9 +223,10 @@ if __name__ == "__main__":
     # Initialize Spark
     spark = create_spark_session()
     
-    # Your GCP project details
-    PROJECT_ID = "dtc-de-project-492321"
-    DATASET_ID = "dbt_prod"
+    # GCP project details — single source of truth is the GCP_PROJECT_ID env var
+    # (repo-root .env); default keeps the current project working with no config.
+    PROJECT_ID = os.environ.get("GCP_PROJECT_ID", "dtc-de-project-506916")
+    DATASET_ID = os.environ.get("GCP_DBT_DATASET", "dbt_prod")
     
     print("\n=== Example 1: Loading simple table ===")
     df_zones = load_table(spark, "dim_zones", PROJECT_ID, DATASET_ID, limit=10)

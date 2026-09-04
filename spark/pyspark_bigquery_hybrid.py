@@ -14,9 +14,10 @@ import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# GCP project info
-PROJECT_ID = "dtc-de-project-492321"
-DATASET_ID = "dbt_prod"
+# GCP project info — single source of truth is the GCP_PROJECT_ID env var (repo-root
+# .env); defaults keep the current project working with no extra config.
+PROJECT_ID = os.environ.get("GCP_PROJECT_ID", "dtc-de-project-506916")
+DATASET_ID = os.environ.get("GCP_DBT_DATASET", "dbt_prod")
 
 def create_spark_session(app_name="Local PySpark with BigQuery"):
     """Create and return a Spark session configured for BigQuery access"""

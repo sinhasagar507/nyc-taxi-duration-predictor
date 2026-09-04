@@ -1,6 +1,9 @@
-# NYC Taxi Trip Duration Prediction
+# NYC Taxi Fare Prediction
 
-End-to-end data engineering pipeline built as part of the [DataTalksClub Data Engineering Zoomcamp](https://github.com/DataTalksClub/data-engineering-zoomcamp). The pipeline ingests NYC Taxi and Limousine Commission (TLC) trip records and daily climate data, transforms them through a dbt ELT layer, and surfaces analytical insights via a Looker Studio dashboard and a PySpark ML model.
+End-to-end data engineering pipeline built as part of the [DataTalksClub Data Engineering Zoomcamp](https://github.com/DataTalksClub/data-engineering-zoomcamp). The pipeline ingests NYC Taxi and Limousine Commission (TLC) trip records and daily climate data, transforms them through a dbt ELT layer, and surfaces analytical insights via a Looker Studio dashboard and an ML model that predicts the trip fare (`fare_capped`). The model lives in `spark/ml/` (scikit-learn sweep + Spark MLlib baseline); its design and phase log live in `spark/2026-07-10-fare-prediction-modeling-plan.md`.
+
+> The project began as a trip-*duration* predictor and was reoriented to fare prediction;
+> the repository folder name (`nyc_taxi_durationprediction`) predates the pivot.
 
 ---
 
@@ -22,18 +25,27 @@ TLC source data (2015-2016)
   fact_trips + dim tables  <-- dbt_prod dataset
         |
         +---> Looker Studio dashboard
-        +---> PySpark duration prediction model
+        +---> Fare prediction model (spark/ml/)
 ```
 
 ---
 
-## Live GCP Infrastructure
+## GCP Infrastructure — reference layout
+
+> **No GCP project is provisioned for this repository, and the pipeline does not assume
+> one.** Treat nothing below as live, and do not expect credentials to be present. The
+> dbt-built marts are held locally, outside the working tree, which is what lets the
+> fare model in `spark/ml/` run end to end with no cloud at all.
+>
+> To point the pipeline at a project of your own: drop a service-account key at the
+> stable path `secrets/gcp-credentials.json`, export `GOOGLE_APPLICATION_CREDENTIALS`,
+> and set `GCP_PROJECT_ID` / `GCP_GCS_BUCKET`. Nothing else needs editing — those two
+> env vars are the single source of truth. The layout below is the structure the DAGs
+> and dbt models expect.
 
 | Resource | Value |
 | --- | --- |
-| Project ID | `dtc-de-project-492321` |
-| Service account | `dtc-de-course@dtc-de-project-492321.iam.gserviceaccount.com` |
-| GCS bucket | `primary-data-dtc` (US) |
+| GCS bucket | `$GCP_GCS_BUCKET` (US) |
 | BigQuery datasets | `nyc_taxi_data`, `nyc_climate_data`, `dbt_prod`, `dbt_ssinha` |
 | dbt prod target | `dbt_prod` |
 | dbt dev target | `dbt_ssinha` |
@@ -63,10 +75,14 @@ nyc_taxi_durationprediction/
 │   ├── ny_taxi_analytics/          # dbt project (git submodule)
 │   ├── profiles.yml                # BigQuery profile (env-var keyfile)
 │   └── requirements.txt            # dbt-bigquery==1.11.1
-├── spark/                          # PySpark notebooks and scripts
-│   ├── nyc_taxi_duration_prediction.ipynb
-│   ├── pyspark_bigquery_hybrid.py
-│   └── local_spark/
+├── docker/dev/                     # Whole-repo dev container (ML, pytest, dbt, Jupyter)
+│   ├── Dockerfile
+│   ├── docker-compose.yml
+│   └── requirements-dev.txt
+├── spark/                          # Batch processing + ML
+│   ├── ml/                         # Fare model: prep, features, sweep, MLlib baseline
+│   ├── 2026-07-10-fare-prediction-modeling-plan.md
+│   └── pyspark_bigquery_hybrid.py  # (+ legacy course notebooks)
 ├── terraform/                      # Infrastructure as code (reference only)
 ├── bigquery/                       # SQL reference queries
 ├── tests/                          # Project-wide test suite
@@ -88,9 +104,11 @@ nyc_taxi_durationprediction/
 - Hardened `.gitignore` covering `secrets/`, `.venv/`, vendored SDKs, and local data dumps.
 - Git history cleaned: removed accidentally committed GCP credentials and vendored `google-cloud-sdk/` (repository shrank from 11 GB to 82 MB via `git filter-repo`).
 
-### Phase 1 — Pipeline reconciliation with live infrastructure
+### Phase 1 — Pipeline reconciliation with infrastructure
 
-All configuration reconciled against the live GCP project (`dtc-de-project-492321`).
+All configuration reconciled against the infrastructure the pipeline ran on. Stale
+project and bucket IDs were fixed, and the DAGs switched to reading config from
+environment variables.
 
 **Airflow DAGs (9 total):**
 
@@ -132,18 +150,45 @@ Removed learning-exercise artifacts that were not part of the live pipeline: leg
 
 Renamed `05_batch_processing/` to `spark/` to match the target directory layout documented in `CLAUDE.md`.
 
-### Test suite (59 tests, all passing)
+### Phase 4 — Refactor and hardening
+
+- **Config decoupled from credentials.** The service-account key is referenced only via a
+  stable, project-agnostic path (`secrets/gcp-credentials.json`) and the
+  `GOOGLE_APPLICATION_CREDENTIALS` env var. Swapping GCP projects is a one-file drop plus a
+  single `.env` edit — no repo-wide hunt. A guard test (`test_credential_decoupling.py`)
+  scans tracked code/config and fails if any project-specific key filename reappears.
+- **Ingest date range parametrized.** The backfill window is driven by `INGEST_START_DATE`
+  / `INGEST_END_DATE` env vars (default `2015-01-01` … `2016-12-31`) rather than hardcoded
+  dates, so extending coverage needs no DAG edits.
+- **Single source of truth** for project/bucket remains the Airflow `docker-compose.yaml`
+  env vars (`GCP_PROJECT_ID`, `GCP_GCS_BUCKET`), read by DAGs and tests via `os.environ`.
+
+### Phase 5 — Documentation
+
+This README and `CLAUDE.md` reconciled to the final structure, and to running without a
+provisioned GCP project (no live resources or credentials assumed).
+
+### Test suite (165 tests on the host, 166 in the dev container)
 
 ```text
 tests/
-├── unit/dags/
-│   ├── test_dag_integrity.py   # all 9 DAG files exist and parse as valid Python
-│   └── test_dag_config.py      # no stale IDs, env var usage, DAG chaining
+├── unit/
+│   ├── dags/
+│   │   ├── test_dag_integrity.py       # all 9 DAG files exist and parse as valid Python
+│   │   └── test_dag_config.py          # no stale IDs, env var usage, DAG chaining
+│   ├── ml/                             # fare-model prep/feature/eval unit tests
+│   │   ├── test_features.py
+│   │   ├── test_preprocess.py
+│   │   └── test_evaluate.py
+│   ├── test_credential_decoupling.py   # guard: old keyfile name never re-hardcoded
+│   └── test_docker_runtime.py          # guard: build context, dbt pins, Jupyter exposure
 └── integration/
-    ├── test_gcs.py             # bucket reachable, file counts per prefix
-    ├── test_bigquery.py        # datasets, external tables, dbt_prod tables
-    └── test_dbt.py             # dbt compile returns exit code 0
+    ├── test_gcs.py                     # bucket reachable, file counts per prefix
+    ├── test_bigquery.py                # datasets, external tables, dbt_prod tables
+    └── test_dbt.py                     # dbt compile returns exit code 0
 ```
+
+The container runs one extra test — a dbt-isolation check that skips outside the image.
 
 Unit tests require no credentials. Integration tests auto-skip if `GOOGLE_APPLICATION_CREDENTIALS` is not set.
 
@@ -153,9 +198,39 @@ Unit tests require no credentials. Integration tests auto-skip if `GOOGLE_APPLIC
 
 ### Prerequisites
 
-- Docker and Docker Compose
-- Python 3.12+ with a virtual environment
-- GCP service account key at `secrets/dtc-de-project-492321-970e67a252d8.json`
+- Docker and Docker Compose — required for the ML/modeling work and for Airflow
+- Python 3.12+ with a virtual environment — optional convenience path for tests and dbt
+- A GCP service-account key at the stable path `secrets/gcp-credentials.json` (gitignored;
+  supply your own if reconnecting to a live project)
+
+### Dev container
+
+The whole-repo development runtime. It carries the ML stack (scikit-learn, XGBoost,
+LightGBM, CatBoost, SHAP, Optuna), PySpark, the pytest suite, the dbt CLI, and JupyterLab.
+These libraries are installed **in the container only**, never in the host venv.
+
+```bash
+# Build (run from the repo root)
+docker compose -f docker/dev/docker-compose.yml build
+
+# Run the test suite
+docker compose -f docker/dev/docker-compose.yml run --rm dev pytest tests/
+
+# One-off script, interactive shell, dbt
+docker compose -f docker/dev/docker-compose.yml run --rm dev \
+  python spark/ml/00_prep_spark.py --limit-files 3
+docker compose -f docker/dev/docker-compose.yml run --rm dev bash
+docker compose -f docker/dev/docker-compose.yml run --rm dev dbt --version
+
+# JupyterLab -> http://127.0.0.1:8888/lab?token=nyc-taxi-dev
+docker compose -f docker/dev/docker-compose.yml up
+```
+
+The repo is bind-mounted at `/workspace`, so host edits are live inside the container and
+outputs written by a container run appear in your working tree. Jupyter is published on
+loopback only; override the token with `JUPYTER_TOKEN=... docker compose ... up`.
+
+Airflow runs its own separate stack — the two are never merged.
 
 ### Start Airflow
 
@@ -174,7 +249,7 @@ Open `http://localhost:8080`. Trigger DAGs in this order:
 ### Run dbt locally
 
 ```bash
-GOOGLE_APPLICATION_CREDENTIALS=secrets/dtc-de-project-492321-970e67a252d8.json \
+GOOGLE_APPLICATION_CREDENTIALS=secrets/gcp-credentials.json \
   dbt build --project-dir dbt/ny_taxi_analytics --profiles-dir dbt
 ```
 
@@ -182,22 +257,32 @@ Note: use `.venv/bin/dbt` explicitly if the Homebrew `dbt` on your PATH is the d
 
 ### Run the test suite
 
+Always pass the explicit `tests/` path — a bare `pytest` also picks up the legacy
+`airflow/tests/` stubs and fails at collection.
+
 ```bash
 # Unit tests only (no credentials required)
-pytest tests/unit/ -v
+.venv/bin/pytest tests/unit/ -v
 
 # Integration tests (reads credentials automatically from secrets/)
-pytest tests/integration/ -v
+.venv/bin/pytest tests/integration/ -v
 
 # Full suite
-pytest tests/ -v
+.venv/bin/pytest tests/ -v
+
+# Same suite inside the dev container
+docker compose -f docker/dev/docker-compose.yml run --rm dev pytest tests/
 ```
+
+`ModuleNotFoundError: No module named 'xgboost'` on the host is expected — the ML
+libraries are container-only, and the tests that need them skip cleanly outside the
+container.
 
 ---
 
 ## Looker Studio Dashboard
 
-A 6-page analytical dashboard is under active development against `dtc-de-project-492321.dbt_prod`. The dashboard connects to BigQuery via the native Looker Studio connector.
+A 6-page analytical dashboard is under active development against `$GCP_PROJECT_ID.dbt_prod`. The dashboard connects to BigQuery via the native Looker Studio connector.
 
 ### Validated baselines
 
@@ -275,7 +360,10 @@ Reference data sources:
 - NYC LION street network: https://www.nyc.gov/content/planning/pages/resources/datasets/lion
 
 **Extended date ranges:**
-The pipeline is designed to accept additional TLC parquet files without schema changes. Adding 2017+ data requires only updating the date range parameters in the ingest DAGs; BigQuery external tables and dbt models pick up new files automatically.
+The pipeline accepts additional TLC parquet files without schema changes. As of Phase 4 the
+backfill window is parametrized via the `INGEST_START_DATE` / `INGEST_END_DATE` env vars, so
+adding 2017+ data is a config change (no DAG edits); BigQuery external tables and dbt models
+pick up the new files automatically.
 
 ---
 
@@ -283,7 +371,7 @@ The pipeline is designed to accept additional TLC parquet files without schema c
 
 - `terraform/` contains infrastructure definitions but TF state is empty. Run `terraform import` before any `terraform apply` to avoid conflicting with existing GCP resources.
 - The Homebrew `dbt` binary on macOS may resolve to the dbt Cloud CLI. Always use `.venv/bin/dbt` for dbt Core commands.
-- The system `GOOGLE_APPLICATION_CREDENTIALS` environment variable may point to a stale path. `tests/conftest.py` overrides it automatically with `secrets/dtc-de-project-492321-970e67a252d8.json` when that file is present.
+- The system `GOOGLE_APPLICATION_CREDENTIALS` environment variable may point to a stale path. `tests/conftest.py` overrides it automatically with `secrets/gcp-credentials.json` when that file is present.
 - The Airflow Docker image targets Linux (arm64). Do not install macOS-specific binaries into it.
 
 ---

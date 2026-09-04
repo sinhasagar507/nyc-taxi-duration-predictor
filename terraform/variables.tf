@@ -1,12 +1,12 @@
 variable "credentials" {
-  description = "My Credentials"
-  default     = "../secrets/dtc-de-project-492321-970e67a252d8.json"
+  description = "Path to the GCP service-account key (stable, project-agnostic filename)"
+  default     = "../secrets/gcp-credentials.json"
 }
 
 
 variable "project" {
-  description = "Project"
-  default     = "dtc-de-project-492321"
+  description = "GCP project ID (override via TF_VAR_project / GCP_PROJECT_ID on account swap)"
+  default     = "dtc-de-project-506916"
 }
 
 variable "region" {
@@ -27,10 +27,15 @@ variable "bq_dataset_name" {
   default = "nyc_tlc_trips"
 }
 
+variable "gcs_bucket_location" {
+  description = "Bucket location. `US` matches the live bucket, whose location is immutable; use `us-central1` for a brand-new bucket to get the Always Free 5 GB-month allowance"
+  default     = "US"
+}
+
 variable "gcs_bucket_name" {
   description = "My Storage Bucket Name"
   #Update the below to a unique bucket name
-  default = "primary-data-dtc"
+  default = "primary-data-dtc-506916"
 }
 
 variable "gcs_storage_class" {

@@ -1,0 +1,14 @@
+# Build context for docker/dev/Dockerfile is the REPO ROOT, because the three
+# requirements files it installs live in three different subtrees. Deny everything,
+# then re-admit only those files. This keeps migration_backup/ (7.1 GB), .venv/,
+# airflow/logs/, spark/ml/data/, google-cloud-sdk/, dbt_packages/ and secrets/ out
+# of the daemon upload entirely — a build should transfer kilobytes, not gigabytes.
+#
+# Everything the container actually uses arrives through the bind mount at runtime,
+# not through COPY, so nothing here restricts what the container can see.
+#
+# This file does NOT affect the Airflow image: that build's context is airflow/.
+*
+!docker/dev/requirements-dev.txt
+!dbt/requirements.txt
+!spark/ml/requirements.txt

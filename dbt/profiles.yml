@@ -6,16 +6,19 @@
 #
 # No secrets live here: the service-account key is resolved from the
 # GOOGLE_APPLICATION_CREDENTIALS env var, which is set differently per context:
-#   - local:   export GOOGLE_APPLICATION_CREDENTIALS=secrets/dtc-de-project-492321-970e67a252d8.json
+#   - local:   export GOOGLE_APPLICATION_CREDENTIALS=secrets/gcp-credentials.json
 #   - Airflow: /.google/credentials/google_credentials.json (already mounted)
 #   - CI:      the workflow writes the key from a GitHub secret and sets the env var
+#
+# `project` is read from the GCP_PROJECT_ID env var (repo-root .env / docker-compose),
+# with the current project as the fallback default, so an account swap is one env edit.
 default:
   target: dev
   outputs:
     dev:
       type: bigquery
       method: service-account
-      project: dtc-de-project-492321
+      project: "{{ env_var('GCP_PROJECT_ID', 'dtc-de-project-506916') }}"
       dataset: dbt_dev
       location: US
       threads: 4
@@ -24,7 +27,7 @@ default:
     ci:
       type: bigquery
       method: service-account
-      project: dtc-de-project-492321
+      project: "{{ env_var('GCP_PROJECT_ID', 'dtc-de-project-506916') }}"
       dataset: dbt_ci
       location: US
       threads: 4
@@ -33,7 +36,7 @@ default:
     prod:
       type: bigquery
       method: service-account
-      project: dtc-de-project-492321
+      project: "{{ env_var('GCP_PROJECT_ID', 'dtc-de-project-506916') }}"
       dataset: dbt_prod
       location: US
       threads: 4

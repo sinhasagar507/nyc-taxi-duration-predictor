@@ -1,0 +1,157 @@
+"""Guard tests for M0 of the GCP cloud migration plan (`notes/2026-09-02-...`).
+
+Two pieces of configuration hold identifiers that point at projects this repository does
+not use. Both are invisible until something tries to run against them, which is the worst
+time to find out. These guards make them visible now, and keep them gone afterwards.
+
+**1. Terraform state must not be tracked by git.** Three `*.tfstate*` files are committed.
+That is wrong twice over:
+
+  - State files can carry resource attributes that are not meant to be shared, and they are
+    machine-written, so nobody reviews their diffs.
+  - `CLAUDE.md` says the state is empty, and it is not. The tracked files describe real
+    resources under foreign projects. An engineer who trusts that sentence and runs
+    `terraform apply` gets a plan built from someone else's inventory.
+
+**2. The dbt submodule's staging schemas must not hardcode a project.** Both source
+definitions named a literal project as their `database:`. The env var `GCP_PROJECT_ID` is
+the single source of truth everywhere else in this repository, and dbt was the one place
+that ignored it. Fixed upstream in `305868f` on 2026-09-02; the guard stays so a future
+edit cannot put the literal back unnoticed.
+
+This one is a **vocabulary collision**, not a typo. dbt names things generically and
+BigQuery names them concretely, so the same two concepts carry two sets of words:
+
+    dbt schema YAML        BigQuery / profiles.yml
+    database:          ->  project
+    schema:            ->  dataset
+
+The collision has already produced a wrong comment in the repository — `schema_climate.yml`
+reads `database: <project> # new dataset name`, which labels a *project* as a *dataset*.
+
+**The fix is to delete the `database:` line, not to templatise it.** Verified against the
+installed dbt 1.11.11, `dbt/parser/sources.py:158`:
+
+    default_database = self.root_project.credentials.database
+    ...
+    database=(source.database or default_database),
+
+An absent `database` inherits the profile's `project`, which `dbt/profiles.yml` already
+resolves from `GCP_PROJECT_ID`. Writing `{{ env_var('GCP_PROJECT_ID') }}` into the source
+YAML would work, but it would duplicate a value the profile already owns — a second place
+to edit, and a second place to drift. `schema:` must **stay**: sources read from
+`nyc_taxi_data` / `nyc_climate_data`, which are not the target dataset.
+
+Reading inside `dbt/ny_taxi_analytics` is fine — `CLAUDE.md` forbids *editing* there, not
+looking. The fix goes upstream, then the submodule pointer moves. This guard is what tells
+you the pointer bump actually landed.
+
+Per **D-009**, these assert what was measured on 2026-09-02, not what was remembered.
+"""
+
+import re
+from pathlib import Path
+
+import pytest
+
+PROJECT_ROOT = Path(__file__).parent.parent.parent
+
+TFSTATE_PATTERN = "*.tfstate*"
+
+# The staging schemas whose `database:` key must be an env var, not a literal.
+SUBMODULE_STAGING_DIR = PROJECT_ROOT / "dbt" / "ny_taxi_analytics" / "models" / "staging"
+
+# A literal GCP project from this account's naming family, sitting in a `database:` line.
+# Matching the key as well as the value keeps the guard off prose and comments that
+# legitimately mention a project.
+DATABASE_LITERAL = re.compile(r"^\s*database:\s*[\"']?(dtc-de-[a-z0-9][a-z0-9_-]*)", re.M)
+
+# Synthetic, not real. Proves the pattern still bites — see D-009.
+SYNTHETIC_DATABASE_LINE = "    database: dtc-de-example-000000 # comment"
+
+
+def _tracked_tfstate_files() -> list[str]:
+    """Every `*.tfstate*` path git currently has in its index."""
+    import subprocess
+
+    out = subprocess.run(
+        ["git", "ls-files", "--", f"terraform/{TFSTATE_PATTERN}"],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return [line for line in out.stdout.splitlines() if line.strip()]
+
+
+class TestTerraformStateIsNotTracked:
+    def test_no_tfstate_file_is_tracked_by_git(self):
+        """State is machine-written and environment-specific. It does not belong in git."""
+        tracked = _tracked_tfstate_files()
+        assert not tracked, (
+            f"Terraform state is tracked by git: {tracked}. Remove it from the index "
+            "(`git rm --cached`) and gitignore `terraform/*.tfstate*`. State describes one "
+            "machine's view of live infrastructure; sharing it through git makes every "
+            "clone disagree about what exists."
+        )
+
+    def test_gitignore_covers_terraform_state(self):
+        """Untracking without ignoring only defers the problem to the next `git add -A`."""
+        gitignore = (PROJECT_ROOT / ".gitignore").read_text()
+        assert "terraform/*.tfstate*" in gitignore, (
+            ".gitignore does not cover `terraform/*.tfstate*`. Without it, the next "
+            "`git add -A` re-adds the state files that were just removed."
+        )
+
+
+class TestSubmoduleSchemasUseTheEnvVar:
+    """Fixed upstream on 2026-09-02; this is now a regression guard.
+
+    These were `xfail(strict=True)` while the fix was blocked in
+    github.com/sinhasagar507/ny_taxi_analytics, which only the owner pushes to. `strict`
+    was the point: when the submodule pointer bumped to a commit carrying the fix, both
+    turned from xpass into a hard failure, and that failure was the instruction to delete
+    the marker. A plain skip would have gone quiet forever and the defect would have
+    survived its own fix.
+
+    The mechanism worked. Upstream `305868f` deleted the `database:` line from both
+    schemas, the pointer moved off `d11219d`, and both tests reported `XPASS(strict)`.
+    The marker is gone and these now assert plainly. They stay because a future edit
+    upstream could put the literal back, and nothing else in the repository would notice.
+    """
+
+    @pytest.mark.parametrize("schema", ["schema_taxi.yml", "schema_climate.yml"])
+    def test_staging_schema_does_not_hardcode_a_project(self, schema):
+        """`database:` must resolve from GCP_PROJECT_ID like everything else does."""
+        path = SUBMODULE_STAGING_DIR / schema
+        if not path.exists():
+            pytest.skip(f"{schema} not present — submodule not checked out")
+        found = sorted(set(DATABASE_LITERAL.findall(path.read_text())))
+        assert not found, (
+            f"{schema} hardcodes a project as its source database: {found}. In dbt, "
+            "`database:` means the GCP *project*. Delete the line: an absent database "
+            "inherits the profile's `project`, which dbt/profiles.yml already resolves "
+            "from GCP_PROJECT_ID (verified, dbt 1.11.11 parser/sources.py:158). Keep "
+            "`schema:` — that is the dataset, and it differs from the target. Fix it "
+            "upstream in ny_taxi_analytics, then bump the submodule pointer here. Do not "
+            "edit inside the submodule directory."
+        )
+
+
+class TestTheGuardStillBites:
+    """Positive controls, per D-009. A pattern that matches nothing passes forever."""
+
+    def test_database_pattern_catches_a_hardcoded_project(self):
+        assert DATABASE_LITERAL.findall(SYNTHETIC_DATABASE_LINE) == [
+            "dtc-de-example-000000"
+        ]
+
+    def test_database_pattern_ignores_the_env_var_form(self):
+        """The fix itself must not trip the guard that asked for it."""
+        fixed = "    database: \"{{ env_var('GCP_PROJECT_ID') }}\""
+        assert not DATABASE_LITERAL.findall(fixed)
+
+    def test_database_pattern_ignores_a_project_named_in_prose(self):
+        """A comment or description mentioning a project is not a configuration defect."""
+        prose = "# migrated away from dtc-de-example-000000 in 2026"
+        assert not DATABASE_LITERAL.findall(prose)

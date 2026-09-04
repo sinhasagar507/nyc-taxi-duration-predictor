@@ -1,0 +1,23 @@
+{
+  "raw_rows": 128781646,
+  "guarded_rows": 127485074,
+  "sample_full_rows": 12748027,
+  "sample_work_rows": 765761,
+  "full_frac": 0.1,
+  "work_frac": 0.06,
+  "seed": 42,
+  "caps": {
+    "per_service": {
+      "Green": {
+        "fare_p99": 45.0,
+        "dist_p99": 14.15
+      },
+      "Yellow": {
+        "fare_p99": 52.0,
+        "dist_p99": 18.7
+      }
+    },
+    "duration_p99_min": 57.56666666666667
+  },
+  "limit_files": null
+}

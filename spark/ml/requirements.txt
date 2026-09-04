@@ -1,0 +1,25 @@
+# ML / Spark libraries — containerized (see docker/dev/Dockerfile).
+# Installed ONLY in the dev image, never into the host .venv. Later phases add
+# their libs here (torch, category-encoders).
+# Harness deps (jupyterlab, pytest) live in docker/dev/requirements-dev.txt.
+#
+# Every pin below is verified to have a linux/aarch64 cp312 wheel on PyPI
+# (checked 2026-07-28). Before bumping any of them, re-run the probe:
+#   docker run --rm python:3.12-slim-bookworm sh -c \
+#     "pip download --no-deps --only-binary=:all: -d /tmp/whl <pkg>==<version>"
+# A missing wheel means a 40-minute source build, not a clean failure.
+# pyspark tracks the CLOUD runtime, not the newest release. Dataproc Serverless
+# runtime 3.0 is Spark 4.0.1 / Scala 2.13 / Python 3.12, so a local run reproduces
+# what the cloud will execute. Moved 4.1.2 -> 4.0.1 on 2026-09-02 after the parity
+# test in the migration plan 2.4 measured the two versions bit-identical on the
+# Phase 4b row 2 configuration. The linux/aarch64 cp312 wheel is proven by that
+# test's container build, which is stronger evidence than the probe above.
+pyspark==4.0.1
+pandas==2.3.1
+pyarrow==21.0.0
+scikit-learn==1.7.1
+xgboost==3.3.0
+lightgbm==4.7.0
+catboost==1.2.10
+shap==0.52.0
+optuna==4.9.0

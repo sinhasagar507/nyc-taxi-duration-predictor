@@ -34,6 +34,13 @@ MANIFEST
 1_intro/terraform/.terraform.lock.hcl
 1_intro/terraform/terraform.tfstate
 1_intro/terraform/terraform.tfstate.1753224766.backup
+
+# Terraform state is machine-written and describes one view of live infrastructure.
+# Tracking it makes every clone disagree about what exists. The lock file is NOT
+# ignored — it pins provider versions and belongs in git. (M0, migration plan 2.6.)
+terraform/*.tfstate*
+terraform/*.tfplan
+terraform/.terraform/
 04_analytics_engineering/experimental_analysis/data/
 05_batch_processing/fhvhv/
 05_batch_processing/fhvhv_susbet/
@@ -45,7 +52,6 @@ test/
 google/5.6.0/darwin_arm64/
 secrets/
 .google/credentials/
-02_workflow_orchestration/airflow/logs/scheduler/latest
 test/green_data_rectify.ipynb
 
 # Large files that exceed GitHub's limit
@@ -222,3 +228,16 @@ dbt_packages/
 **/logs/
 .user.yml
 **/.user.yml
+migration_backup/
+
+# === Model sweep outputs — regenerated on every run, ignored by default ===
+# Smoke/work boards are throwaway. Pin a *validated* board deliberately with
+# `git add -f spark/ml/results/leaderboard_<tag>.csv` (take its sweep_<tag>.json
+# too — rows/folds/models/env/wall-time are what keep the board interpretable).
+spark/ml/results/
+
+# === Local scratch artifacts (not repo content) ===
+project-status-phase5.pdf
+spark/head.csv
+spark/Demo Spark notebook.ipynb
+spark/nyc_taxi_duration_prediction_1.ipynb

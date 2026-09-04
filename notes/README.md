@@ -1,5 +1,31 @@
 # Notes
 
+This directory holds two unrelated sets of documents. The **project documents**
+below are this repository's own working notes. Everything under *Course notes* is
+the inherited DataTalksClub DE-Zoomcamp lesson material.
+
+## Project documents
+
+Each note carries an **`Invoke when:`** line at its top, per **D-010**. Scan the triggers
+below; read only the notes whose trigger fires. Do not read them all.
+
+| Document | Invoke when |
+| --- | --- |
+| [Decision Register](decisions.md) | **Always.** Before proposing anything. A LOCKED entry stops contradicting work; a DEFERRED one is never a next step. |
+| [GCP cloud migration plan](2026-09-02-gcp-cloud-migration-plan.md) | Any cloud, Terraform, Dataproc, BigQuery or cost question. Before spending anything. Its Status list is the current next-step pointer. |
+| [Repository audit, 2026-08-22](2026-08-22-repo-audit.md) | Starting new work, or looking for what is still open. |
+| [GCP reference](gcp-reference.md) | You need the bucket or dataset layout, the test layout, or the E2E smoke steps. |
+| [GCP project setup runbook](gcp-setup-runbook.md) | The owner is provisioning a project, or credentials are missing. |
+| [Dashboard development plan v3](2026-05-24-Dashboard-development-plan-v3.md) | Working on the Looker Studio dashboard. |
+| `project-status-phase5.pdf` | A point-in-time status export. **Gitignored on purpose**, so it exists only on the owner's machine; a fresh clone will not have it. |
+
+The modeling plan lives with the code it describes, at
+`spark/2026-07-10-fare-prediction-modeling-plan.md`, next to its companion
+`spark/2026-07-04-ml-handoff-context.md`. **Invoke when:** any question about the fare
+model, the feature contract, the sweep, or the sealed holdout.
+
+## Course notes
+
 Below you will find links to the notes for each lesson.
 
 * [Lesson 1: Introduction to Data Engineering](1_intro.md)
